@@ -33,6 +33,13 @@ async function buildSystemPrompt(authHeader: string | null): Promise<string> {
     ? `VARNING: saldot går under gränsen ${formatSEK(forecast.threshold)} den ${forecast.breachDate} (saldo då ca ${formatSEK(forecast.breachAmount ?? 0)}).`
     : `Ingen prognosvarning de närmaste 14 dagarna.`;
 
+  const suggestions = computeSuggestions(forecast, txs);
+  const suggestionsBlock = suggestions.length
+    ? `\n== Föreslagna åtgärder för att undvika varningen ==\n${suggestions
+        .map((s) => `- ${s.label}: ${s.detail}`)
+        .join("\n")}\nOm användaren frågar "vad kan jag göra?" eller liknande, presentera dessa förslag som en punktlista och förklara kort varför var och en hjälper.`
+    : "";
+
   return `Du är Pejl, en vänlig och rakt-på-sak ekonomiassistent för svenska småföretagare.
 Du svarar alltid på svenska, kort och konkret, med belopp i SEK och datum i ISO-format (YYYY-MM-DD) när du refererar dem.
 Använd ENDAST datan nedan när du svarar om användarens ekonomi. Hitta inte på siffror.
@@ -49,6 +56,7 @@ Slutsaldo: ${formatSEK(forecast.endBalance)}
 Lägsta saldo: ${formatSEK(forecast.minBalance)} (${forecast.minDate})
 Vald varningsgräns: ${formatSEK(forecast.threshold)}
 ${breach}
+${suggestionsBlock}
 
 == Obetalda transaktioner kommande period ==
 ${unpaid
