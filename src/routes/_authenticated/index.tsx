@@ -499,7 +499,7 @@ function ChatInner({
                     {m.role === "user" ? (
                       <MessageContent>{text}</MessageContent>
                     ) : (
-                      <MessageContent variant="flat">
+                      <MessageContent className="bg-transparent border-0 p-0 shadow-none">
                         <MessageResponse>{text}</MessageResponse>
                       </MessageContent>
                     )}
@@ -508,7 +508,7 @@ function ChatInner({
               })}
               {status === "submitted" && (
                 <Message from="assistant">
-                  <MessageContent variant="flat">
+                  <MessageContent className="bg-transparent border-0 p-0 shadow-none">
                     <Shimmer>Tänker…</Shimmer>
                   </MessageContent>
                 </Message>
