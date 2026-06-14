@@ -1,0 +1,1 @@
+UPDATE public.profiles SET threshold = 15000;
