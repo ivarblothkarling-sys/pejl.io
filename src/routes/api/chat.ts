@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
 
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
-import { computeForecast, formatSEK, type Tx } from "@/lib/forecast";
+import { computeForecast, computeSuggestions, formatSEK, type Tx } from "@/lib/forecast";
 
 type ChatRequestBody = { messages?: unknown };
 
