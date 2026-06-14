@@ -30,8 +30,9 @@ export const getDashboardData = createServerFn({ method: "GET" })
       transactions,
       14,
     );
+    const suggestions = computeSuggestions(forecast, transactions);
 
-    return { profile, transactions, forecast };
+    return { profile, transactions, forecast, suggestions };
   });
 
 export const updateThreshold = createServerFn({ method: "POST" })
