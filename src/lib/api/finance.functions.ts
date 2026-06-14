@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { computeForecast, formatSEK, type Tx } from "@/lib/forecast";
+import { computeForecast, computeSuggestions, formatSEK, type Tx } from "@/lib/forecast";
 
 export const getDashboardData = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
