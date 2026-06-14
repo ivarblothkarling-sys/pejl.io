@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, LogOut, Sparkles, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { AlertTriangle, BellRing, CalendarClock, LogOut, Sparkles, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -197,17 +197,56 @@ function DashboardPage() {
 
         {/* Warning banner */}
         {hasBreach && (
-          <div className="border border-destructive/40 bg-destructive/8 rounded-xl p-4 flex gap-3 items-start" style={{ backgroundColor: "color-mix(in oklab, var(--destructive) 8%, transparent)" }}>
-            <AlertTriangle className="size-5 text-destructive shrink-0 mt-0.5" />
-            <div>
-              <div className="font-semibold text-foreground">
-                Saldot riskerar att gå under din gräns
-              </div>
-              <div className="text-sm text-muted-foreground mt-1">
-                Den <strong className="text-foreground">{formatDateSv(forecast.breachDate!)}</strong> beräknas saldot vara{" "}
-                <strong className="text-foreground">{formatSEK(forecast.breachAmount ?? 0)}</strong>, vilket är under din varningsgräns på {formatSEK(forecast.threshold)}.
+          <div
+            className="border border-destructive/40 rounded-xl p-4"
+            style={{ backgroundColor: "color-mix(in oklab, var(--destructive) 8%, transparent)" }}
+          >
+            <div className="flex gap-3 items-start">
+              <AlertTriangle className="size-5 text-destructive shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="font-semibold text-foreground">
+                  Saldot riskerar att gå under din gräns
+                </div>
+                <div className="text-sm text-muted-foreground mt-1">
+                  Den <strong className="text-foreground">{formatDateSv(forecast.breachDate!)}</strong> beräknas saldot vara{" "}
+                  <strong className="text-foreground">{formatSEK(forecast.breachAmount ?? 0)}</strong>, vilket är under din varningsgräns på {formatSEK(forecast.threshold)}.
+                </div>
               </div>
             </div>
+            {data.suggestions.length > 0 && (
+              <div className="mt-4 pl-8">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Förslag
+                </div>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {data.suggestions.map((s) => (
+                    <button
+                      key={s.txId + s.kind}
+                      onClick={() =>
+                        toast.success(
+                          s.kind === "remind"
+                            ? "Påminnelse skickad (demo)"
+                            : "Betalning uppskjuten (demo)",
+                          { description: s.detail },
+                        )
+                      }
+                      className="text-left bg-background hover:bg-secondary border border-border rounded-lg p-3 transition-colors group"
+                    >
+                      <div className="flex items-center gap-2 font-medium text-sm text-foreground">
+                        {s.kind === "remind" ? (
+                          <BellRing className="size-4 text-primary" />
+                        ) : (
+                          <CalendarClock className="size-4 text-primary" />
+                        )}
+                        {s.label}
+                        <span className="ml-auto text-xs text-muted-foreground group-hover:text-foreground">→</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">{s.detail}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

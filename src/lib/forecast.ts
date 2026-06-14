@@ -89,6 +89,76 @@ export function computeForecast(
   };
 }
 
+export type Suggestion = {
+  kind: "remind" | "defer";
+  label: string;
+  detail: string;
+  txId: string;
+  amount: number;
+  date: string;
+  daysFromToday: number;
+};
+
+export function computeSuggestions(
+  forecast: ForecastResult,
+  transactions: Tx[],
+  fromDate: Date = new Date(),
+): Suggestion[] {
+  if (!forecast.breachDate) return [];
+  const today = new Date(fromDate);
+  today.setHours(0, 0, 0, 0);
+  const todayMs = today.getTime();
+  const unpaid = transactions.filter((t) => !t.paid);
+  const suggestions: Suggestion[] = [];
+
+  const incomes = unpaid
+    .filter((t) => t.kind === "income")
+    .sort((a, b) => Number(b.amount) - Number(a.amount));
+  if (incomes[0]) {
+    const inv = incomes[0];
+    const days = Math.round((new Date(inv.due_date).getTime() - todayMs) / 86400000);
+    const when =
+      days < 0
+        ? `${Math.abs(days)} dagar försenad`
+        : days === 0
+          ? "förfaller idag"
+          : `förfaller om ${days} dagar`;
+    suggestions.push({
+      kind: "remind",
+      label: "Skicka betalningspåminnelse",
+      detail: `${inv.description} — ${formatSEK(Number(inv.amount))} (${when})`,
+      txId: inv.id,
+      amount: Number(inv.amount),
+      date: inv.due_date,
+      daysFromToday: days,
+    });
+  }
+
+  const breachMs = new Date(forecast.breachDate).getTime();
+  const expensesBefore = unpaid
+    .filter((t) => t.kind === "expense" && new Date(t.due_date).getTime() <= breachMs)
+    .sort((a, b) => Number(b.amount) - Number(a.amount));
+  const candidate =
+    expensesBefore[0] ??
+    unpaid
+      .filter((t) => t.kind === "expense")
+      .sort((a, b) => Number(b.amount) - Number(a.amount))[0];
+  if (candidate) {
+    const days = Math.round((new Date(candidate.due_date).getTime() - todayMs) / 86400000);
+    suggestions.push({
+      kind: "defer",
+      label: "Skjut leverantörsbetalning",
+      detail: `${candidate.description} — ${formatSEK(Number(candidate.amount))} (förfaller ${candidate.due_date})`,
+      txId: candidate.id,
+      amount: Number(candidate.amount),
+      date: candidate.due_date,
+      daysFromToday: days,
+    });
+  }
+
+  return suggestions;
+}
+
 export const formatSEK = (n: number) =>
   new Intl.NumberFormat("sv-SE", { style: "currency", currency: "SEK", maximumFractionDigits: 0 }).format(n);
 
