@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, LogOut, Sparkles, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { AlertTriangle, BellRing, CalendarClock, LogOut, Sparkles, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
