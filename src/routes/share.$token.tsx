@@ -11,9 +11,12 @@ import {
 } from "recharts";
 import { AlertTriangle, Eye, Landmark, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 
-import { formatDateSv, formatSEK } from "@/lib/forecast";
+import { formatDateSv, formatSEK, type Tx } from "@/lib/forecast";
 import { getSharedDashboard } from "@/lib/api/share.functions";
 import logo from "@/assets/pejl-logo.png";
+
+type SharedData = Awaited<ReturnType<typeof getSharedDashboard>>;
+
 
 export const Route = createFileRoute("/share/$token")({
   head: () => ({
@@ -37,16 +40,16 @@ export const Route = createFileRoute("/share/$token")({
 });
 
 function SharedDashboard() {
-  const { profile, forecast, transactions } = Route.useLoaderData();
+  const { profile, forecast, transactions } = Route.useLoaderData() as SharedData;
   const hasBreach = !!forecast.breachDate;
 
-  const chartData = forecast.points.map((p) => ({
+  const chartData = forecast.points.map((p: SharedData["forecast"]["points"][number]) => ({
     ...p,
     label: formatDateSv(p.date),
     threshold: forecast.threshold,
   }));
 
-  const upcoming = transactions.filter((t) => !t.paid).slice(0, 10);
+  const upcoming = transactions.filter((t: Tx) => !t.paid).slice(0, 10);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-secondary/30 to-background pb-24">
@@ -135,7 +138,7 @@ function SharedDashboard() {
         <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
           <h3 className="font-semibold mb-3">Kommande poster</h3>
           <ul className="space-y-2.5">
-            {upcoming.map((t) => {
+            {upcoming.map((t: Tx) => {
               const isTax = t.category === "tax";
               return (
                 <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
