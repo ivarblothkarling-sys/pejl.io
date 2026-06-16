@@ -64,13 +64,17 @@ export const generateWeeklySummary = createServerFn({ method: "POST" })
     if (txRes.error) throw new Error(txRes.error.message);
 
     const profile = profileRes.data ?? { current_balance: 0, threshold: 0, company_name: "ditt företag" };
-    const txs = (txRes.data ?? []) as Tx[];
+    const txs = [
+      ...((txRes.data ?? []) as Tx[]),
+      ...computeTaxEvents(),
+    ].sort((a, b) => a.due_date.localeCompare(b.due_date));
     const forecast = computeForecast(
       Number(profile.current_balance) || 0,
       Number(profile.threshold) || 0,
       txs,
       14,
     );
+
 
     const key = process.env.LOVABLE_API_KEY;
     if (!key) throw new Error("AI är inte konfigurerad");
