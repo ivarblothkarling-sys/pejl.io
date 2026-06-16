@@ -305,8 +305,9 @@ function DashboardPage() {
                   ))}
                 </div>
                 <p className="text-[11px] text-muted-foreground/80 mt-3 leading-relaxed">
-                  Detta är en prognos baserat på bokförd data i Fortnox – inte bokförings- eller skatterådgivning. Du beslutar alltid själv.
+                  Pejl ger dig och din redovisningskonsult en gemensam bild av likviditeten framåt – baserat på bokförd data i Fortnox. Ersätter inte bokföring eller rådgivning. Du och din konsult beslutar alltid själv.
                 </p>
+
               </div>
             )}
 
@@ -386,18 +387,25 @@ function DashboardPage() {
               {upcomingUnpaid.length === 0 && (
                 <li className="text-sm text-muted-foreground">Inga obetalda poster.</li>
               )}
-              {upcomingUnpaid.map((t) => (
-                <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{t.description}</div>
-                    <div className="text-xs text-muted-foreground">{formatDateSv(t.due_date)}</div>
-                  </div>
-                  <div className={t.kind === "income" ? "text-success font-medium" : "text-foreground font-medium"}>
-                    {t.kind === "income" ? "+" : "−"}
-                    {formatSEK(Number(t.amount))}
-                  </div>
-                </li>
-              ))}
+              {upcomingUnpaid.map((t) => {
+                const isTax = t.category === "tax";
+                return (
+                  <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
+                    <div className="min-w-0 flex items-center gap-2">
+                      {isTax && <Landmark className="size-3.5 text-tax shrink-0" />}
+                      <div className="min-w-0">
+                        <div className={`truncate font-medium ${isTax ? "text-tax" : ""}`}>{t.description}</div>
+                        <div className="text-xs text-muted-foreground">{formatDateSv(t.due_date)}</div>
+                      </div>
+                    </div>
+                    <div className={t.kind === "income" ? "text-success font-medium" : isTax ? "text-tax font-medium" : "text-foreground font-medium"}>
+                      {t.kind === "income" ? "+" : "−"}
+                      {formatSEK(Number(t.amount))}
+                    </div>
+                  </li>
+                );
+              })}
+
             </ul>
           </div>
 
