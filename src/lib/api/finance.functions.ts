@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { computeForecast, computeSuggestions, formatSEK, type Tx } from "@/lib/forecast";
+import { computeTaxEvents } from "@/lib/tax";
 
 export const getDashboardData = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -22,7 +23,10 @@ export const getDashboardData = createServerFn({ method: "GET" })
     if (txRes.error) throw new Error(txRes.error.message);
 
     const profile = profileRes.data ?? { current_balance: 0, threshold: 0, company_name: "Mitt företag" };
-    const transactions = (txRes.data ?? []) as Tx[];
+    const transactions = [
+      ...((txRes.data ?? []) as Tx[]),
+      ...computeTaxEvents(),
+    ].sort((a, b) => a.due_date.localeCompare(b.due_date));
 
     const forecast = computeForecast(
       Number(profile.current_balance) || 0,
@@ -34,6 +38,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
 
     return { profile, transactions, forecast, suggestions };
   });
+
 
 export const updateThreshold = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

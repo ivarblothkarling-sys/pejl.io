@@ -5,7 +5,9 @@ export type Tx = {
   due_date: string; // YYYY-MM-DD
   description: string;
   paid: boolean;
+  category?: "tax" | "regular";
 };
+
 
 export type ForecastPoint = {
   date: string;
