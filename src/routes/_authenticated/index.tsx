@@ -216,6 +216,28 @@ function DashboardPage() {
           />
         </section>
 
+        <div className="flex flex-wrap items-center gap-3 -mt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleShare}
+            disabled={shareLoading}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Share2 className="size-4" />
+            {shareLoading ? "Skapar länk…" : "Dela med din redovisningskonsult →"}
+          </Button>
+          {shareUrl && (
+            <button
+              onClick={copyShareUrl}
+              className="inline-flex items-center gap-2 text-xs bg-secondary border border-border rounded-full px-3 py-1.5 hover:bg-secondary/70 max-w-full"
+            >
+              {shareCopied ? <Check className="size-3.5 text-success shrink-0" /> : <Copy className="size-3.5 shrink-0" />}
+              <span className="truncate font-mono">{shareUrl}</span>
+            </button>
+          )}
+        </div>
+
         {editingThreshold && (
           <div className="bg-card border border-border rounded-xl p-4 flex items-end gap-2 max-w-md">
             <div className="flex-1">
@@ -230,6 +252,7 @@ function DashboardPage() {
             <Button onClick={handleSaveThreshold}>Spara</Button>
           </div>
         )}
+
 
         {/* Warning banner */}
         {hasBreach && (
