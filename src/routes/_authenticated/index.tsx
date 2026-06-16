@@ -65,6 +65,10 @@ function DashboardPage() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [editingThreshold, setEditingThreshold] = useState(false);
   const [thresholdInput, setThresholdInput] = useState("");
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+
 
   const refresh = async () => {
     try {
