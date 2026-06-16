@@ -120,6 +120,36 @@ function DashboardPage() {
     navigate({ to: "/auth" });
   };
 
+  const handleShare = async () => {
+    if (shareLoading) return;
+    setShareLoading(true);
+    try {
+      const { token } = await createShareLink();
+      const url = `${window.location.origin}/share/${token}`;
+      setShareUrl(url);
+      try {
+        await navigator.clipboard.writeText(url);
+        setShareCopied(true);
+        toast.success("Länk kopierad", { description: "Skicka den till din redovisningskonsult." });
+        setTimeout(() => setShareCopied(false), 2500);
+      } catch {
+        toast.success("Länk skapad", { description: "Kopiera den manuellt nedan." });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte skapa länk");
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  const copyShareUrl = async () => {
+    if (!shareUrl) return;
+    await navigator.clipboard.writeText(shareUrl);
+    setShareCopied(true);
+    setTimeout(() => setShareCopied(false), 2500);
+  };
+
+
   if (loading || !data) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground">
