@@ -34,11 +34,13 @@ async function buildSystemPrompt(authHeader: string | null): Promise<string> {
     : `Ingen prognosvarning de närmaste 14 dagarna.`;
 
   const suggestions = computeSuggestions(forecast, txs);
+  const disclaimer = "Detta är en prognos baserat på bokförd data i Fortnox – inte bokförings- eller skatterådgivning. Du beslutar alltid själv.";
   const suggestionsBlock = suggestions.length
     ? `\n== Föreslagna åtgärder för att undvika varningen ==\n${suggestions
         .map((s) => `- ${s.label}: ${s.detail}`)
-        .join("\n")}\nOm användaren frågar "vad kan jag göra?" eller liknande, presentera dessa förslag som en punktlista och förklara kort varför var och en hjälper.`
+        .join("\n")}\nOm användaren frågar "vad kan jag göra?" eller liknande, presentera dessa förslag som en punktlista och förklara kort varför var och en hjälper. Avsluta ALLTID råd/förslag med denna disclaimer på en egen rad i kursiv stil: _${disclaimer}_`
     : "";
+
 
   return `Du är Pejl, en vänlig och rakt-på-sak ekonomiassistent för svenska småföretagare.
 Du svarar alltid på svenska, kort och konkret, med belopp i SEK och datum i ISO-format (YYYY-MM-DD) när du refererar dem.
