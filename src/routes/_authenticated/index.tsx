@@ -245,8 +245,12 @@ function DashboardPage() {
                     </button>
                   ))}
                 </div>
+                <p className="text-[11px] text-muted-foreground/80 mt-3 leading-relaxed">
+                  Detta är en prognos baserat på bokförd data i Fortnox – inte bokförings- eller skatterådgivning. Du beslutar alltid själv.
+                </p>
               </div>
             )}
+
           </div>
         )}
 
