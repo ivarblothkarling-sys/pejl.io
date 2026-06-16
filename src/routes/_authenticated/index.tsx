@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, BellRing, CalendarClock, LogOut, Sparkles, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { AlertTriangle, BellRing, CalendarClock, Check, Copy, Landmark, LogOut, Share2, Sparkles, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,8 @@ import {
   getDashboardData,
   updateThreshold,
 } from "@/lib/api/finance.functions";
+import { createShareLink } from "@/lib/api/share.functions";
+
 import logo from "@/assets/pejl-logo.png";
 
 export const Route = createFileRoute("/_authenticated/")({
