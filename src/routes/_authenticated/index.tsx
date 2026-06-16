@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, BellRing, CalendarClock, LogOut, Sparkles, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { AlertTriangle, BellRing, CalendarClock, Check, Copy, Landmark, LogOut, Share2, Sparkles, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,8 @@ import {
   getDashboardData,
   updateThreshold,
 } from "@/lib/api/finance.functions";
+import { createShareLink } from "@/lib/api/share.functions";
+
 import logo from "@/assets/pejl-logo.png";
 
 export const Route = createFileRoute("/_authenticated/")({
@@ -63,6 +65,10 @@ function DashboardPage() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [editingThreshold, setEditingThreshold] = useState(false);
   const [thresholdInput, setThresholdInput] = useState("");
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+
 
   const refresh = async () => {
     try {
@@ -113,6 +119,36 @@ function DashboardPage() {
     await supabase.auth.signOut();
     navigate({ to: "/auth" });
   };
+
+  const handleShare = async () => {
+    if (shareLoading) return;
+    setShareLoading(true);
+    try {
+      const { token } = await createShareLink();
+      const url = `${window.location.origin}/share/${token}`;
+      setShareUrl(url);
+      try {
+        await navigator.clipboard.writeText(url);
+        setShareCopied(true);
+        toast.success("Länk kopierad", { description: "Skicka den till din redovisningskonsult." });
+        setTimeout(() => setShareCopied(false), 2500);
+      } catch {
+        toast.success("Länk skapad", { description: "Kopiera den manuellt nedan." });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte skapa länk");
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  const copyShareUrl = async () => {
+    if (!shareUrl) return;
+    await navigator.clipboard.writeText(shareUrl);
+    setShareCopied(true);
+    setTimeout(() => setShareCopied(false), 2500);
+  };
+
 
   if (loading || !data) {
     return (
@@ -180,6 +216,28 @@ function DashboardPage() {
           />
         </section>
 
+        <div className="flex flex-wrap items-center gap-3 -mt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleShare}
+            disabled={shareLoading}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Share2 className="size-4" />
+            {shareLoading ? "Skapar länk…" : "Dela med din redovisningskonsult →"}
+          </Button>
+          {shareUrl && (
+            <button
+              onClick={copyShareUrl}
+              className="inline-flex items-center gap-2 text-xs bg-secondary border border-border rounded-full px-3 py-1.5 hover:bg-secondary/70 max-w-full"
+            >
+              {shareCopied ? <Check className="size-3.5 text-success shrink-0" /> : <Copy className="size-3.5 shrink-0" />}
+              <span className="truncate font-mono">{shareUrl}</span>
+            </button>
+          )}
+        </div>
+
         {editingThreshold && (
           <div className="bg-card border border-border rounded-xl p-4 flex items-end gap-2 max-w-md">
             <div className="flex-1">
@@ -194,6 +252,7 @@ function DashboardPage() {
             <Button onClick={handleSaveThreshold}>Spara</Button>
           </div>
         )}
+
 
         {/* Warning banner */}
         {hasBreach && (
@@ -246,8 +305,9 @@ function DashboardPage() {
                   ))}
                 </div>
                 <p className="text-[11px] text-muted-foreground/80 mt-3 leading-relaxed">
-                  Detta är en prognos baserat på bokförd data i Fortnox – inte bokförings- eller skatterådgivning. Du beslutar alltid själv.
+                  Pejl ger dig och din redovisningskonsult en gemensam bild av likviditeten framåt – baserat på bokförd data i Fortnox. Ersätter inte bokföring eller rådgivning. Du och din konsult beslutar alltid själv.
                 </p>
+
               </div>
             )}
 
@@ -327,18 +387,25 @@ function DashboardPage() {
               {upcomingUnpaid.length === 0 && (
                 <li className="text-sm text-muted-foreground">Inga obetalda poster.</li>
               )}
-              {upcomingUnpaid.map((t) => (
-                <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{t.description}</div>
-                    <div className="text-xs text-muted-foreground">{formatDateSv(t.due_date)}</div>
-                  </div>
-                  <div className={t.kind === "income" ? "text-success font-medium" : "text-foreground font-medium"}>
-                    {t.kind === "income" ? "+" : "−"}
-                    {formatSEK(Number(t.amount))}
-                  </div>
-                </li>
-              ))}
+              {upcomingUnpaid.map((t) => {
+                const isTax = t.category === "tax";
+                return (
+                  <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
+                    <div className="min-w-0 flex items-center gap-2">
+                      {isTax && <Landmark className="size-3.5 text-tax shrink-0" />}
+                      <div className="min-w-0">
+                        <div className={`truncate font-medium ${isTax ? "text-tax" : ""}`}>{t.description}</div>
+                        <div className="text-xs text-muted-foreground">{formatDateSv(t.due_date)}</div>
+                      </div>
+                    </div>
+                    <div className={t.kind === "income" ? "text-success font-medium" : isTax ? "text-tax font-medium" : "text-foreground font-medium"}>
+                      {t.kind === "income" ? "+" : "−"}
+                      {formatSEK(Number(t.amount))}
+                    </div>
+                  </li>
+                );
+              })}
+
             </ul>
           </div>
 
