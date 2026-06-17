@@ -159,7 +159,37 @@ function DashboardPage() {
     );
   }
 
-  const { profile, forecast, transactions } = data;
+  const demoData = useMemo<DashData | null>(() => {
+    if (!demoStage || !data) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const iso = (offset: number) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() + offset);
+      return d.toISOString().slice(0, 10);
+    };
+    const invoiceDay = demoStage === "resolved" ? 2 : 10;
+    const txs: Tx[] = [
+      { id: "demo-invoice", kind: "income", amount: 60000, due_date: iso(invoiceDay), description: "Kundfaktura #2041 – Acme AB", paid: false, category: "regular" },
+      { id: "demo-salary", kind: "expense", amount: 45000, due_date: iso(3), description: "Löner – utbetalning", paid: false, category: "regular" },
+      { id: "demo-rent", kind: "expense", amount: 18000, due_date: iso(5), description: "Hyra kontor", paid: false, category: "regular" },
+      { id: "demo-vat", kind: "expense", amount: 12400, due_date: iso(9), description: "Moms", paid: false, category: "tax" },
+    ];
+    const startBalance = 8200;
+    const threshold = 15000;
+    const fc = computeForecast(startBalance, threshold, txs, 14, today);
+    const sugg = computeSuggestions(fc, txs, today);
+    return {
+      ...data,
+      profile: { ...data.profile, current_balance: startBalance, threshold, company_name: "Demo AB" },
+      forecast: fc,
+      transactions: txs,
+      suggestions: sugg,
+    };
+  }, [demoStage, data]);
+
+  const view = demoData ?? data;
+  const { profile, forecast, transactions } = view;
   const hasBreach = !!forecast.breachDate;
 
   const chartData = forecast.points.map((p) => ({
@@ -169,6 +199,20 @@ function DashboardPage() {
   }));
 
   const upcomingUnpaid = transactions.filter((t) => !t.paid).slice(0, 8);
+
+  const handleSuggestionClick = (s: typeof view.suggestions[number]) => {
+    if (demoStage === "critical" && s.kind === "remind") {
+      setDemoStage("resolved");
+      toast.success("Påminnelse skickad", {
+        description: "Acme AB bekräftade — betalar inom 2 dagar. Prognosen uppdaterad.",
+      });
+      return;
+    }
+    toast.success(
+      s.kind === "remind" ? "Påminnelse skickad (demo)" : "Betalning uppskjuten (demo)",
+      { description: s.detail },
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-secondary/30 to-background pb-24">
