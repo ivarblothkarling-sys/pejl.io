@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, BellRing, CalendarClock, Check, Copy, Landmark, LogOut, Share2, Sparkles, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { AlertTriangle, BellRing, CalendarClock, Check, Copy, Landmark, LogOut, PlayCircle, Share2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ import {
   PromptInputTextarea,
 } from "@/components/ai-elements/prompt-input";
 import { Shimmer } from "@/components/ai-elements/shimmer";
-import { formatDateSv, formatSEK } from "@/lib/forecast";
+import { computeForecast, computeSuggestions, formatDateSv, formatSEK, type Tx } from "@/lib/forecast";
 import {
   generateWeeklySummary,
   getDashboardData,
@@ -68,6 +68,7 @@ function DashboardPage() {
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [demoStage, setDemoStage] = useState<null | "critical" | "resolved">(null);
 
 
   const refresh = async () => {
@@ -158,7 +159,37 @@ function DashboardPage() {
     );
   }
 
-  const { profile, forecast, transactions } = data;
+  const demoData = useMemo<DashData | null>(() => {
+    if (!demoStage || !data) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const iso = (offset: number) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() + offset);
+      return d.toISOString().slice(0, 10);
+    };
+    const invoiceDay = demoStage === "resolved" ? 2 : 10;
+    const txs: Tx[] = [
+      { id: "demo-invoice", kind: "income", amount: 60000, due_date: iso(invoiceDay), description: "Kundfaktura #2041 – Acme AB", paid: false, category: "regular" },
+      { id: "demo-salary", kind: "expense", amount: 45000, due_date: iso(3), description: "Löner – utbetalning", paid: false, category: "regular" },
+      { id: "demo-rent", kind: "expense", amount: 18000, due_date: iso(5), description: "Hyra kontor", paid: false, category: "regular" },
+      { id: "demo-vat", kind: "expense", amount: 12400, due_date: iso(9), description: "Moms", paid: false, category: "tax" },
+    ];
+    const startBalance = 8200;
+    const threshold = 15000;
+    const fc = computeForecast(startBalance, threshold, txs, 14, today);
+    const sugg = computeSuggestions(fc, txs, today);
+    return {
+      ...data,
+      profile: { ...data.profile, current_balance: startBalance, threshold, company_name: "Demo AB" },
+      forecast: fc,
+      transactions: txs,
+      suggestions: sugg,
+    };
+  }, [demoStage, data]);
+
+  const view = demoData ?? data;
+  const { profile, forecast, transactions } = view;
   const hasBreach = !!forecast.breachDate;
 
   const chartData = forecast.points.map((p) => ({
@@ -168,6 +199,20 @@ function DashboardPage() {
   }));
 
   const upcomingUnpaid = transactions.filter((t) => !t.paid).slice(0, 8);
+
+  const handleSuggestionClick = (s: typeof view.suggestions[number]) => {
+    if (demoStage === "critical" && s.kind === "remind") {
+      setDemoStage("resolved");
+      toast.success("Påminnelse skickad", {
+        description: "Acme AB bekräftade — betalar inom 2 dagar. Prognosen uppdaterad.",
+      });
+      return;
+    }
+    toast.success(
+      s.kind === "remind" ? "Påminnelse skickad (demo)" : "Betalning uppskjuten (demo)",
+      { description: s.detail },
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-secondary/30 to-background pb-24">
@@ -187,6 +232,41 @@ function DashboardPage() {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 pt-6 space-y-6">
+        {/* Demo banner */}
+        {demoStage === null ? (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-4 py-3">
+            <div className="text-sm">
+              <div className="font-medium text-foreground">Vill du se hur Pejl varnar i en krissituation?</div>
+              <div className="text-xs text-muted-foreground">Tre klick: kritiskt scenario → förslag → läget räddat.</div>
+            </div>
+            <Button size="sm" onClick={() => setDemoStage("critical")}>
+              <PlayCircle className="size-4" /> Visa demo-scenario
+            </Button>
+          </div>
+        ) : (
+          <div
+            className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
+              demoStage === "resolved"
+                ? "border-success/40 bg-success/10"
+                : "border-destructive/40 bg-destructive/5"
+            }`}
+          >
+            <div className="text-sm flex items-center gap-2">
+              {demoStage === "resolved" ? (
+                <ShieldCheck className="size-4 text-success" />
+              ) : (
+                <AlertTriangle className="size-4 text-destructive" />
+              )}
+              <span className="font-medium text-foreground">
+                Demo-läge — {demoStage === "resolved" ? "läget räddat" : "kritiskt scenario"}
+              </span>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setDemoStage(null)}>
+              <X className="size-4" /> Avsluta demo
+            </Button>
+          </div>
+        )}
+
         {/* KPI row */}
         <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <KpiCard icon={<Wallet className="size-4" />} label="Dagens saldo" value={formatSEK(forecast.startBalance)} />
@@ -272,23 +352,16 @@ function DashboardPage() {
                 </div>
               </div>
             </div>
-            {data.suggestions.length > 0 && (
+            {view.suggestions.length > 0 && (
               <div className="mt-4 pl-8">
                 <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
                   Förslag
                 </div>
                 <div className="grid sm:grid-cols-2 gap-2">
-                  {data.suggestions.map((s) => (
+                  {view.suggestions.map((s) => (
                     <button
                       key={s.txId + s.kind}
-                      onClick={() =>
-                        toast.success(
-                          s.kind === "remind"
-                            ? "Påminnelse skickad (demo)"
-                            : "Betalning uppskjuten (demo)",
-                          { description: s.detail },
-                        )
-                      }
+                      onClick={() => handleSuggestionClick(s)}
                       className="text-left bg-background hover:bg-secondary border border-border rounded-lg p-3 transition-colors group"
                     >
                       <div className="flex items-center gap-2 font-medium text-sm text-foreground">
