@@ -232,6 +232,41 @@ function DashboardPage() {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 pt-6 space-y-6">
+        {/* Demo banner */}
+        {demoStage === null ? (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-4 py-3">
+            <div className="text-sm">
+              <div className="font-medium text-foreground">Vill du se hur Pejl varnar i en krissituation?</div>
+              <div className="text-xs text-muted-foreground">Tre klick: kritiskt scenario → förslag → läget räddat.</div>
+            </div>
+            <Button size="sm" onClick={() => setDemoStage("critical")}>
+              <PlayCircle className="size-4" /> Visa demo-scenario
+            </Button>
+          </div>
+        ) : (
+          <div
+            className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
+              demoStage === "resolved"
+                ? "border-success/40 bg-success/10"
+                : "border-destructive/40 bg-destructive/5"
+            }`}
+          >
+            <div className="text-sm flex items-center gap-2">
+              {demoStage === "resolved" ? (
+                <ShieldCheck className="size-4 text-success" />
+              ) : (
+                <AlertTriangle className="size-4 text-destructive" />
+              )}
+              <span className="font-medium text-foreground">
+                Demo-läge — {demoStage === "resolved" ? "läget räddat" : "kritiskt scenario"}
+              </span>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setDemoStage(null)}>
+              <X className="size-4" /> Avsluta demo
+            </Button>
+          </div>
+        )}
+
         {/* KPI row */}
         <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <KpiCard icon={<Wallet className="size-4" />} label="Dagens saldo" value={formatSEK(forecast.startBalance)} />
