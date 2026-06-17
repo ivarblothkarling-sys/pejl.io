@@ -269,7 +269,7 @@ function DashboardPage() {
 
         {/* KPI row */}
         <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KpiCard icon={<Wallet className="size-4" />} label="Dagens saldo" value={formatSEK(forecast.startBalance)} />
+          <KpiCard icon={<Wallet className="size-4" />} label="Dagens saldo" value={<CountUp value={forecast.startBalance} duration={800} />} />
           <KpiCard
             icon={forecast.endBalance >= forecast.startBalance ? <TrendingUp className="size-4 text-success" /> : <TrendingDown className="size-4 text-destructive" />}
             label="Om 14 dagar"
@@ -337,7 +337,8 @@ function DashboardPage() {
         {/* Warning banner */}
         {hasBreach && (
           <div
-            className="border border-destructive/40 rounded-xl p-4"
+            key={`warn-${forecast.breachDate}`}
+            className="border border-destructive/40 rounded-xl p-4 animate-in zoom-in-95 fade-in duration-300"
             style={{ backgroundColor: "color-mix(in oklab, var(--destructive) 8%, transparent)" }}
           >
             <div className="flex gap-3 items-start">
@@ -446,6 +447,9 @@ function DashboardPage() {
                   stroke="var(--color-chart-1)"
                   strokeWidth={2.5}
                   fill="url(#balanceFill)"
+                  isAnimationActive
+                  animationDuration={1200}
+                  animationEasing="ease-out"
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -460,10 +464,14 @@ function DashboardPage() {
               {upcomingUnpaid.length === 0 && (
                 <li className="text-sm text-muted-foreground">Inga obetalda poster.</li>
               )}
-              {upcomingUnpaid.map((t) => {
+              {upcomingUnpaid.map((t, i) => {
                 const isTax = t.category === "tax";
                 return (
-                  <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
+                  <li
+                    key={t.id}
+                    style={{ animationDelay: `${i * 50}ms`, animationFillMode: "both" }}
+                    className="flex items-center justify-between gap-3 text-sm animate-in slide-in-from-top-2 fade-in duration-300"
+                  >
                     <div className="min-w-0 flex items-center gap-2">
                       {isTax && <Landmark className="size-3.5 text-tax shrink-0" />}
                       <div className="min-w-0">
@@ -519,6 +527,26 @@ function DashboardPage() {
   );
 }
 
+function CountUp({ value, duration = 800 }: { value: number; duration?: number }) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    let raf = 0;
+    const start = performance.now();
+    const from = 0;
+    const to = value;
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - start) / duration);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setN(from + (to - from) * eased);
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, duration]);
+  return <>{formatSEK(Math.round(n))}</>;
+}
+
+
 function KpiCard({
   icon,
   label,
@@ -528,7 +556,7 @@ function KpiCard({
 }: {
   icon: React.ReactNode;
   label: string;
-  value: string;
+  value: React.ReactNode;
   sub?: string;
   action?: React.ReactNode;
 }) {
