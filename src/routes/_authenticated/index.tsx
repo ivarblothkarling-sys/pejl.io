@@ -35,7 +35,7 @@ import {
   PromptInputTextarea,
 } from "@/components/ai-elements/prompt-input";
 import { Shimmer } from "@/components/ai-elements/shimmer";
-import { formatDateSv, formatSEK } from "@/lib/forecast";
+import { computeForecast, computeSuggestions, formatDateSv, formatSEK, type Tx } from "@/lib/forecast";
 import {
   generateWeeklySummary,
   getDashboardData,
