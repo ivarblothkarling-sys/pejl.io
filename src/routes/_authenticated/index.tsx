@@ -68,6 +68,7 @@ function DashboardPage() {
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [demoStage, setDemoStage] = useState<null | "critical" | "resolved">(null);
 
 
   const refresh = async () => {
