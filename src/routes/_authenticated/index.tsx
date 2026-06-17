@@ -151,14 +151,6 @@ function DashboardPage() {
   };
 
 
-  if (loading || !data) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
-        Hämtar din ekonomi…
-      </div>
-    );
-  }
-
   const demoData = useMemo<DashData | null>(() => {
     if (!demoStage || !data) return null;
     const today = new Date();
@@ -187,6 +179,14 @@ function DashboardPage() {
       suggestions: sugg,
     };
   }, [demoStage, data]);
+
+  if (loading || !data) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
+        Hämtar din ekonomi…
+      </div>
+    );
+  }
 
   const view = demoData ?? data;
   const { profile, forecast, transactions } = view;
