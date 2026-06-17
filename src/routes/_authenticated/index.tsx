@@ -352,23 +352,16 @@ function DashboardPage() {
                 </div>
               </div>
             </div>
-            {data.suggestions.length > 0 && (
+            {view.suggestions.length > 0 && (
               <div className="mt-4 pl-8">
                 <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
                   Förslag
                 </div>
                 <div className="grid sm:grid-cols-2 gap-2">
-                  {data.suggestions.map((s) => (
+                  {view.suggestions.map((s) => (
                     <button
                       key={s.txId + s.kind}
-                      onClick={() =>
-                        toast.success(
-                          s.kind === "remind"
-                            ? "Påminnelse skickad (demo)"
-                            : "Betalning uppskjuten (demo)",
-                          { description: s.detail },
-                        )
-                      }
+                      onClick={() => handleSuggestionClick(s)}
                       className="text-left bg-background hover:bg-secondary border border-border rounded-lg p-3 transition-colors group"
                     >
                       <div className="flex items-center gap-2 font-medium text-sm text-foreground">
