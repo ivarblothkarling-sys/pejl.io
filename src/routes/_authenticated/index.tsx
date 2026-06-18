@@ -200,6 +200,20 @@ function DashboardPage() {
 
   const upcomingUnpaid = transactions.filter((t) => !t.paid).slice(0, 8);
 
+  const taxItems = transactions
+    .filter((t) => t.category === "tax" && !t.paid)
+    .sort((a, b) => a.due_date.localeCompare(b.due_date));
+  const taxBreaches = taxItems
+    .map((t) => {
+      const point = forecast.points.find((p) => p.date === t.due_date);
+      if (!point) return null;
+      if (point.balance < forecast.threshold) {
+        return { tx: t, balanceAfter: point.balance };
+      }
+      return null;
+    })
+    .filter((x): x is { tx: Tx; balanceAfter: number } => x !== null);
+
   const handleSuggestionClick = (s: typeof view.suggestions[number]) => {
     if (demoStage === "critical" && s.kind === "remind") {
       setDemoStage("resolved");
