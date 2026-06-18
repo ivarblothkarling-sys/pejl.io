@@ -88,6 +88,7 @@
   --warning-foreground: oklch(0.20 0.04 60);
 
   --tax: oklch(0.40 0.13 255);
+  --tax-foreground: oklch(0.99 0 0);
 
 
   --border: oklch(0.91 0.015 220);
