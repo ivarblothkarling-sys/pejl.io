@@ -631,8 +631,9 @@ function KpiCard({
 
 const SUGGESTED = [
   "Hur går det ekonomiskt just nu?",
-  "Vilka fakturor är obetalda?",
-  "När är saldot som lägst?",
+  "När förfaller min nästa momsdeklaration?",
+  "Klarar jag arbetsgivaravgifterna den 12:e?",
+  "Vilka kundfakturor är mer än 30 dagar försenade?",
 ];
 
 function ChatPanel() {
