@@ -200,6 +200,20 @@ function DashboardPage() {
 
   const upcomingUnpaid = transactions.filter((t) => !t.paid).slice(0, 8);
 
+  const taxItems = transactions
+    .filter((t) => t.category === "tax" && !t.paid)
+    .sort((a, b) => a.due_date.localeCompare(b.due_date));
+  const taxBreaches = taxItems
+    .map((t) => {
+      const point = forecast.points.find((p) => p.date === t.due_date);
+      if (!point) return null;
+      if (point.balance < forecast.threshold) {
+        return { tx: t, balanceAfter: point.balance };
+      }
+      return null;
+    })
+    .filter((x): x is { tx: Tx; balanceAfter: number } => x !== null);
+
   const handleSuggestionClick = (s: typeof view.suggestions[number]) => {
     if (demoStage === "critical" && s.kind === "remind") {
       setDemoStage("resolved");
@@ -456,6 +470,49 @@ function DashboardPage() {
           </div>
         </section>
 
+        {/* Kommande skatter & avgifter */}
+        {taxItems.length > 0 && (
+          <section
+            className="rounded-2xl border border-tax/30 p-5 shadow-sm"
+            style={{ backgroundColor: "color-mix(in oklab, var(--tax) 10%, transparent)" }}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <span className="inline-flex items-center justify-center size-6 rounded-md bg-tax text-tax-foreground font-bold text-sm">§</span>
+              <h3 className="font-semibold text-tax">Kommande skatter & avgifter</h3>
+            </div>
+            <ul className="space-y-2.5">
+              {taxItems.map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-foreground">{t.description}</div>
+                    <div className="text-xs text-muted-foreground">Förfaller {formatDateSv(t.due_date)}</div>
+                  </div>
+                  <div className="text-tax font-semibold">−{formatSEK(Number(t.amount))}</div>
+                </li>
+              ))}
+            </ul>
+            {taxBreaches.length > 0 && (
+              <div className="mt-4 space-y-2">
+                {taxBreaches.map(({ tx, balanceAfter }) => (
+                  <div
+                    key={`taxbreach-${tx.id}`}
+                    className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
+                  >
+                    <AlertTriangle className="size-4 text-destructive shrink-0 mt-0.5" />
+                    <div className="text-foreground">
+                      <strong>OBS:</strong> Skattebetalningen den {formatDateSv(tx.due_date)} riskerar ta saldot under din gräns
+                      {" "}(beräknat saldo {formatSEK(balanceAfter)}, gräns {formatSEK(forecast.threshold)}).
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground/80 mt-3 leading-relaxed">
+              Skatter och avgifter räknas alltid med i prognosen automatiskt – de är den vanligaste orsaken till likviditetskriser.
+            </p>
+          </section>
+        )}
+
         {/* Upcoming + Weekly summary */}
         <section className="grid md:grid-cols-2 gap-4">
           <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
@@ -574,8 +631,9 @@ function KpiCard({
 
 const SUGGESTED = [
   "Hur går det ekonomiskt just nu?",
-  "Vilka fakturor är obetalda?",
-  "När är saldot som lägst?",
+  "När förfaller min nästa momsdeklaration?",
+  "Klarar jag arbetsgivaravgifterna den 12:e?",
+  "Vilka kundfakturor är mer än 30 dagar försenade?",
 ];
 
 function ChatPanel() {
