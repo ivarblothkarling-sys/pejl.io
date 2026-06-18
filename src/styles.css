@@ -133,6 +133,7 @@
   --warning: oklch(0.78 0.16 65);
   --warning-foreground: oklch(0.18 0.04 60);
   --tax: oklch(0.72 0.13 250);
+  --tax-foreground: oklch(0.15 0.04 240);
 
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
