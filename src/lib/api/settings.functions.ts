@@ -3,7 +3,8 @@ import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const providerEnum = z.enum(["fortnox", "tripletex", "xero", "quickbooks"]);
+const providerEnum = z.enum(["fortnox", "sie", "tripletex", "xero", "quickbooks"]);
+const waitlistProviderEnum = z.enum(["tripletex", "xero", "quickbooks"]);
 const currencyEnum = z.enum(["SEK", "NOK", "GBP", "EUR", "USD"]);
 const languageEnum = z.enum(["sv", "en"]);
 const countryEnum = z.enum(["SE", "NO", "GB", "US"]);
@@ -55,7 +56,7 @@ export const updateUserSettings = createServerFn({ method: "POST" })
 
 export const joinProviderWaitlist = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(z.object({ provider: providerEnum }))
+  .inputValidator(z.object({ provider: waitlistProviderEnum }))
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase
       .from("provider_waitlist")
@@ -65,4 +66,66 @@ export const joinProviderWaitlist = createServerFn({ method: "POST" })
       );
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+const sieTxSchema = z.object({
+  kind: z.enum(["income", "expense"]),
+  amount: z.number().positive(),
+  due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  description: z.string().min(1).max(200),
+});
+
+export const importSieData = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      companyName: z.string().max(200).optional(),
+      currentBalance: z.number(),
+      transactions: z.array(sieTxSchema).max(500),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+
+    // Update profile: provider=sie, balance, company name
+    const profileUpdate: {
+      accounting_provider: "sie";
+      current_balance: number;
+      updated_at: string;
+      company_name?: string;
+    } = {
+      accounting_provider: "sie",
+      current_balance: data.currentBalance,
+      updated_at: new Date().toISOString(),
+    };
+    if (data.companyName) profileUpdate.company_name = data.companyName;
+
+    const { error: pErr } = await supabase
+      .from("profiles")
+      .update(profileUpdate)
+      .eq("id", userId);
+    if (pErr) throw new Error(pErr.message);
+
+    // Replace all transactions for the user with the SIE-derived set
+    const { error: delErr } = await supabase
+      .from("transactions")
+      .delete()
+      .eq("user_id", userId);
+    if (delErr) throw new Error(delErr.message);
+
+    if (data.transactions.length > 0) {
+      const rows = data.transactions.map((t) => ({
+        user_id: userId,
+        kind: t.kind,
+        amount: t.amount,
+        due_date: t.due_date,
+        description: t.description,
+        paid: false,
+        source: "sie",
+      }));
+      const { error: insErr } = await supabase.from("transactions").insert(rows);
+      if (insErr) throw new Error(insErr.message);
+    }
+
+    return { ok: true, count: data.transactions.length };
   });

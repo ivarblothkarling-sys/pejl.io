@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { ArrowLeft, BellRing, Check, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, BellRing, Check, FileUp, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -9,11 +9,13 @@ import {
   getUserSettings,
   updateUserSettings,
   joinProviderWaitlist,
+  importSieData,
 } from "@/lib/api/settings.functions";
 import { AVAILABLE_PROVIDERS } from "@/lib/accounting/accountingService";
 import { AVAILABLE_CURRENCIES } from "@/lib/i18n/format";
 import { AVAILABLE_LANGUAGES, type Language } from "@/lib/i18n/strings";
 import { useT } from "@/lib/i18n/useT";
+import { decodeCP437, parseSie, deriveForecast } from "@/lib/accounting/sie";
 
 export const Route = createFileRoute("/_authenticated/installningar")({
   head: () => ({
@@ -31,6 +33,13 @@ function SettingsPage() {
   const navigate = useNavigate();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [lastImport, setLastImport] = useState<{
+    company: string;
+    balance: number;
+    count: number;
+  } | null>(null);
 
   useEffect(() => {
     getUserSettings()
@@ -54,7 +63,7 @@ function SettingsPage() {
       await updateUserSettings({
         data: {
           accounting_provider: patch.accounting_provider as
-            | "fortnox" | "tripletex" | "xero" | "quickbooks" | undefined,
+            | "fortnox" | "sie" | "tripletex" | "xero" | "quickbooks" | undefined,
           currency: patch.currency as "SEK" | "NOK" | "GBP" | "EUR" | "USD" | undefined,
           language: patch.language as "sv" | "en" | undefined,
           country: patch.country as "SE" | "NO" | "GB" | "US" | undefined,
@@ -76,6 +85,43 @@ function SettingsPage() {
       toast.success(t("settings.provider.notified"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Fel");
+    }
+  };
+
+
+
+  const handleSieFile = async (file: File) => {
+    setImporting(true);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const text = decodeCP437(bytes);
+      if (!text.includes("#SIETYP")) {
+        throw new Error("Filen verkar inte vara en giltig SIE-fil.");
+      }
+      const parsed = parseSie(text);
+      const derived = deriveForecast(parsed);
+      const res = await importSieData({
+        data: {
+          companyName: parsed.companyName || undefined,
+          currentBalance: derived.currentBalance,
+          transactions: derived.transactions,
+        },
+      });
+      setSettings({
+        ...settings,
+        accounting_provider: "sie",
+      });
+      setLastImport({
+        company: parsed.companyName,
+        balance: derived.currentBalance,
+        count: res.count,
+      });
+      toast.success(`Importerade ${res.count} transaktioner från ${parsed.companyName}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Kunde inte läsa SIE-filen");
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -133,15 +179,48 @@ function SettingsPage() {
                   </div>
                   <div className="mt-3">
                     {isAvailable ? (
-                      !isSelected && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={saving}
-                          onClick={() => save({ accounting_provider: p.id })}
-                        >
-                          Välj
-                        </Button>
+                      p.id === "sie" ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".se,.si,.sie"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) void handleSieFile(f);
+                            }}
+                          />
+                          <Button
+                            size="sm"
+                            variant={isSelected ? "ghost" : "outline"}
+                            disabled={importing}
+                            onClick={() => fileInputRef.current?.click()}
+                          >
+                            {importing ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <FileUp className="size-3.5" />
+                            )}
+                            {isSelected ? "Byt fil" : "Ladda upp SIE-fil"}
+                          </Button>
+                          {lastImport && isSelected && (
+                            <span className="text-xs text-muted-foreground">
+                              {lastImport.count} poster · {lastImport.balance.toLocaleString("sv-SE")} kr
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        !isSelected && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={saving}
+                            onClick={() => save({ accounting_provider: p.id })}
+                          >
+                            Välj
+                          </Button>
+                        )
                       )
                     ) : (
                       <div className="flex items-center gap-2">
