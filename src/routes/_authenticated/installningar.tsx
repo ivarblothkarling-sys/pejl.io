@@ -56,7 +56,7 @@ function SettingsPage() {
       await updateUserSettings({
         data: {
           accounting_provider: patch.accounting_provider as
-            | "fortnox" | "tripletex" | "xero" | "quickbooks" | undefined,
+            | "fortnox" | "sie" | "tripletex" | "xero" | "quickbooks" | undefined,
           currency: patch.currency as "SEK" | "NOK" | "GBP" | "EUR" | "USD" | undefined,
           language: patch.language as "sv" | "en" | undefined,
           country: patch.country as "SE" | "NO" | "GB" | "US" | undefined,
