@@ -515,7 +515,7 @@ function DashboardPage() {
                   animationDuration={1200}
                   animationEasing="ease-out"
                 />
-                {indicativeLabelPoint && null}
+                
               </AreaChart>
             </ResponsiveContainer>
           </div>
