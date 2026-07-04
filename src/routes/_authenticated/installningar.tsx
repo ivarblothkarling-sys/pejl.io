@@ -88,13 +88,7 @@ function SettingsPage() {
     }
   };
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [importing, setImporting] = useState(false);
-  const [lastImport, setLastImport] = useState<{
-    company: string;
-    balance: number;
-    count: number;
-  } | null>(null);
+
 
   const handleSieFile = async (file: File) => {
     setImporting(true);
