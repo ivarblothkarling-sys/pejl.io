@@ -81,6 +81,49 @@ function SettingsPage() {
     }
   };
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [lastImport, setLastImport] = useState<{
+    company: string;
+    balance: number;
+    count: number;
+  } | null>(null);
+
+  const handleSieFile = async (file: File) => {
+    setImporting(true);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const text = decodeCP437(bytes);
+      if (!text.includes("#SIETYP")) {
+        throw new Error("Filen verkar inte vara en giltig SIE-fil.");
+      }
+      const parsed = parseSie(text);
+      const derived = deriveForecast(parsed);
+      const res = await importSieData({
+        data: {
+          companyName: parsed.companyName || undefined,
+          currentBalance: derived.currentBalance,
+          transactions: derived.transactions,
+        },
+      });
+      setSettings({
+        ...settings,
+        accounting_provider: "sie",
+      });
+      setLastImport({
+        company: parsed.companyName,
+        balance: derived.currentBalance,
+        count: res.count,
+      });
+      toast.success(`Importerade ${res.count} transaktioner från ${parsed.companyName}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Kunde inte läsa SIE-filen");
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-secondary/30 to-background pb-24">
       <header className="border-b border-border bg-background/80 backdrop-blur sticky top-0 z-10">
