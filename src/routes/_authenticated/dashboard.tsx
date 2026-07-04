@@ -417,8 +417,20 @@ function DashboardPage() {
         <section className="bg-card border border-border rounded-2xl p-4 md:p-6 shadow-sm">
           <div className="flex items-start justify-between mb-4">
             <div>
-              <h2 className="text-base font-semibold">Prognos 14 dagar framåt</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Baserat på kända in- och utbetalningar</p>
+              <h2 className="text-base font-semibold">Prognos 30 dagar framåt</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Bekräftad dag 0–14, indikativ dag 15–30</p>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-3 h-0.5 bg-[var(--color-chart-1)]" />
+                Bekräftad
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="inline-block w-3 h-0.5 opacity-60"
+                  style={{ borderTop: "2px dashed var(--color-chart-1)", background: "transparent" }}
+                />
+                Indikativ
             </div>
           </div>
           <div className="h-64 -mx-2">
