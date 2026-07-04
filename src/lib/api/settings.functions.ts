@@ -3,7 +3,8 @@ import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const providerEnum = z.enum(["fortnox", "tripletex", "xero", "quickbooks"]);
+const providerEnum = z.enum(["fortnox", "sie", "tripletex", "xero", "quickbooks"]);
+const waitlistProviderEnum = z.enum(["tripletex", "xero", "quickbooks"]);
 const currencyEnum = z.enum(["SEK", "NOK", "GBP", "EUR", "USD"]);
 const languageEnum = z.enum(["sv", "en"]);
 const countryEnum = z.enum(["SE", "NO", "GB", "US"]);
