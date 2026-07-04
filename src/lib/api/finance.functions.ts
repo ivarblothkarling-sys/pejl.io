@@ -95,7 +95,7 @@ Lyft fram dagens saldo, lägsta saldot kommande 30 dagar, eventuell varning, sam
 
 Företag: ${profile.company_name}
 Dagens saldo: ${formatSEK(forecast.startBalance)}
-Prognos om 14 dagar: ${formatSEK(forecast.endBalance)}
+Prognos om 30 dagar: ${formatSEK(forecast.endBalance)}
 Lägsta saldo: ${formatSEK(forecast.minBalance)} (${forecast.minDate})
 ${breachText}
 
