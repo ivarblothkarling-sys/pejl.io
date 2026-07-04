@@ -431,6 +431,7 @@ function DashboardPage() {
                   style={{ borderTop: "2px dashed var(--color-chart-1)", background: "transparent" }}
                 />
                 Indikativ
+              </span>
             </div>
           </div>
           <div className="h-64 -mx-2">
