@@ -33,12 +33,12 @@ export const Route = createFileRoute("/")({
 const CSS = `
 .pejl-landing *{margin:0;padding:0;box-sizing:border-box}
 .pejl-landing{
-  --black:#080808;--surface:#0F0F0F;--surface-2:#171717;--surface-3:#1F1F1F;
-  --border:rgba(255,255,255,0.06);
-  --amber:#F5A623;--amber-dim:rgba(245,166,35,0.12);--amber-glow:rgba(245,166,35,0.25);
-  --green:#00FF88;--green-dim:rgba(0,255,136,0.08);
-  --coral:#E06B50;--coral-dim:rgba(224,107,80,0.08);
-  --white:#FFFFFF;--grey:#8A8A8A;--grey-2:#5A5A5A;
+  --black:#0E1424;--surface:#161C30;--surface-2:#1D2439;--surface-3:#252D46;
+  --border:rgba(255,255,255,0.08);
+  --amber:#FFB84D;--amber-dim:rgba(255,184,77,0.14);--amber-glow:rgba(255,184,77,0.35);
+  --green:#34E0A1;--green-dim:rgba(52,224,161,0.12);
+  --coral:#FF7A8A;--coral-dim:rgba(255,122,138,0.10);
+  --white:#FFF7EA;--grey:#A8B0C6;--grey-2:#6B7391;
   background:var(--black);color:var(--white);
   font-family:'Plus Jakarta Sans',sans-serif;-webkit-font-smoothing:antialiased;
   overflow-x:hidden;min-height:100vh;
