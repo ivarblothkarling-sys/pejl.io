@@ -33,6 +33,13 @@ function SettingsPage() {
   const navigate = useNavigate();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [lastImport, setLastImport] = useState<{
+    company: string;
+    balance: number;
+    count: number;
+  } | null>(null);
 
   useEffect(() => {
     getUserSettings()
