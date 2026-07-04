@@ -22,10 +22,11 @@ export const getDashboardData = createServerFn({ method: "GET" })
     if (profileRes.error) throw new Error(profileRes.error.message);
     if (txRes.error) throw new Error(txRes.error.message);
 
-    const profile = profileRes.data ?? { current_balance: 0, threshold: 0, company_name: "Mitt företag" };
+    const profile = profileRes.data ?? { current_balance: 0, threshold: 0, company_name: "Mitt företag", country: "SE", currency: "SEK", language: "sv", accounting_provider: "fortnox" };
+    const country = (profile as { country?: string }).country ?? "SE";
     const transactions = [
       ...((txRes.data ?? []) as Tx[]),
-      ...computeTaxEvents(),
+      ...computeTaxEvents(country as "SE" | "NO" | "GB" | "US"),
     ].sort((a, b) => a.due_date.localeCompare(b.due_date));
 
     const forecast = computeForecast(
@@ -63,10 +64,11 @@ export const generateWeeklySummary = createServerFn({ method: "POST" })
     if (profileRes.error) throw new Error(profileRes.error.message);
     if (txRes.error) throw new Error(txRes.error.message);
 
-    const profile = profileRes.data ?? { current_balance: 0, threshold: 0, company_name: "ditt företag" };
+    const profile = profileRes.data ?? { current_balance: 0, threshold: 0, company_name: "ditt företag", country: "SE" };
+    const country = (profile as { country?: string }).country ?? "SE";
     const txs = [
       ...((txRes.data ?? []) as Tx[]),
-      ...computeTaxEvents(),
+      ...computeTaxEvents(country as "SE" | "NO" | "GB" | "US"),
     ].sort((a, b) => a.due_date.localeCompare(b.due_date));
     const forecast = computeForecast(
       Number(profile.current_balance) || 0,
