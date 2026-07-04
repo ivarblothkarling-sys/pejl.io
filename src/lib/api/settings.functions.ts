@@ -87,8 +87,13 @@ export const importSieData = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
-    // Update profile: provider=sie, currency SEK, country SE, balance, company name
-    const profileUpdate: Record<string, unknown> = {
+    // Update profile: provider=sie, balance, company name
+    const profileUpdate: {
+      accounting_provider: "sie";
+      current_balance: number;
+      updated_at: string;
+      company_name?: string;
+    } = {
       accounting_provider: "sie",
       current_balance: data.currentBalance,
       updated_at: new Date().toISOString(),
