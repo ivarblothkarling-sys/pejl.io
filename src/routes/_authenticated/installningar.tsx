@@ -178,15 +178,48 @@ function SettingsPage() {
                   </div>
                   <div className="mt-3">
                     {isAvailable ? (
-                      !isSelected && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={saving}
-                          onClick={() => save({ accounting_provider: p.id })}
-                        >
-                          Välj
-                        </Button>
+                      p.id === "sie" ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".se,.si,.sie"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) void handleSieFile(f);
+                            }}
+                          />
+                          <Button
+                            size="sm"
+                            variant={isSelected ? "ghost" : "outline"}
+                            disabled={importing}
+                            onClick={() => fileInputRef.current?.click()}
+                          >
+                            {importing ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <FileUp className="size-3.5" />
+                            )}
+                            {isSelected ? "Byt fil" : "Ladda upp SIE-fil"}
+                          </Button>
+                          {lastImport && isSelected && (
+                            <span className="text-xs text-muted-foreground">
+                              {lastImport.count} poster · {lastImport.balance.toLocaleString("sv-SE")} kr
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        !isSelected && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={saving}
+                            onClick={() => save({ accounting_provider: p.id })}
+                          >
+                            Välj
+                          </Button>
+                        )
                       )
                     ) : (
                       <div className="flex items-center gap-2">
