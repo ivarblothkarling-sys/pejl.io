@@ -91,7 +91,7 @@ export const generateWeeklySummary = createServerFn({ method: "POST" })
 
     const prompt = `Du är Pejl — en pragmatisk ekonomiassistent för svenska småföretagare.
 Skriv en kort, vänlig veckosammanfattning (max 6 meningar, på svenska) baserat på datan nedan.
-Lyft fram dagens saldo, lägsta saldot kommande 14 dagar, eventuell varning, samt 1–2 konkreta råd.
+Lyft fram dagens saldo, lägsta saldot kommande 30 dagar, eventuell varning, samt 1–2 konkreta råd.
 
 Företag: ${profile.company_name}
 Dagens saldo: ${formatSEK(forecast.startBalance)}
