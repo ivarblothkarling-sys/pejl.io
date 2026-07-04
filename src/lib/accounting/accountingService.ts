@@ -45,7 +45,15 @@ export const AVAILABLE_PROVIDERS: {
   flag: string;
   status: "available" | "coming_soon";
 }[] = [
+export const AVAILABLE_PROVIDERS: {
+  id: AccountingProviderId | "sie";
+  name: string;
+  country: string;
+  flag: string;
+  status: "available" | "coming_soon";
+}[] = [
   { id: "fortnox", name: "Fortnox", country: "Sverige", flag: "🇸🇪", status: "available" },
+  { id: "sie", name: "SIE-import", country: "Sverige", flag: "🇸🇪", status: "available" },
   { id: "tripletex", name: "Tripletex", country: "Norge", flag: "🇳🇴", status: "coming_soon" },
   { id: "xero", name: "Xero", country: "UK / Global", flag: "🇬🇧", status: "coming_soon" },
   { id: "quickbooks", name: "QuickBooks", country: "USA", flag: "🇺🇸", status: "coming_soon" },
