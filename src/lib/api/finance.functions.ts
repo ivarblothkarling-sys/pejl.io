@@ -74,7 +74,7 @@ export const generateWeeklySummary = createServerFn({ method: "POST" })
       Number(profile.current_balance) || 0,
       Number(profile.threshold) || 0,
       txs,
-      14,
+      30,
     );
 
 
