@@ -33,7 +33,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
       Number(profile.current_balance) || 0,
       Number(profile.threshold) || 0,
       transactions,
-      14,
+      30,
     );
     const suggestions = computeSuggestions(forecast, transactions);
 
