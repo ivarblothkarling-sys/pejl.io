@@ -169,7 +169,7 @@ function DashboardPage() {
     ];
     const startBalance = 8200;
     const threshold = 15000;
-    const fc = computeForecast(startBalance, threshold, txs, 14, today);
+    const fc = computeForecast(startBalance, threshold, txs, 30, today);
     const sugg = computeSuggestions(fc, txs, today);
     return {
       ...data,
