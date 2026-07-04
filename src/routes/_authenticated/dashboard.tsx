@@ -200,7 +200,7 @@ function DashboardPage() {
     confirmed: i <= CONFIRMED_DAYS ? p.balance : null,
     indicative: i >= CONFIRMED_DAYS ? p.balance : null,
   }));
-  const indicativeLabelPoint = chartData[Math.min(chartData.length - 1, CONFIRMED_DAYS + Math.floor((chartData.length - 1 - CONFIRMED_DAYS) / 2))];
+  
 
   const upcomingUnpaid = transactions.filter((t) => !t.paid).slice(0, 8);
 
