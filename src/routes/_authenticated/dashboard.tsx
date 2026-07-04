@@ -192,11 +192,15 @@ function DashboardPage() {
   const { profile, forecast, transactions } = view;
   const hasBreach = !!forecast.breachDate;
 
-  const chartData = forecast.points.map((p) => ({
+  const CONFIRMED_DAYS = 14;
+  const chartData = forecast.points.map((p, i) => ({
     ...p,
     label: formatDateSv(p.date),
     threshold: forecast.threshold,
+    confirmed: i <= CONFIRMED_DAYS ? p.balance : null,
+    indicative: i >= CONFIRMED_DAYS ? p.balance : null,
   }));
+  const indicativeLabelPoint = chartData[Math.min(chartData.length - 1, CONFIRMED_DAYS + Math.floor((chartData.length - 1 - CONFIRMED_DAYS) / 2))];
 
   const upcomingUnpaid = transactions.filter((t) => !t.paid).slice(0, 8);
 
