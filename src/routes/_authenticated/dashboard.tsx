@@ -49,7 +49,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
     meta: [
       { title: "Översikt — Pejl" },
-      { name: "description", content: "Dagens saldo och 14-dagars likviditetsprognos för ditt företag." },
+      { name: "description", content: "Dagens saldo och 30-dagars likviditetsprognos för ditt företag." },
     ],
   }),
   component: DashboardPage,
