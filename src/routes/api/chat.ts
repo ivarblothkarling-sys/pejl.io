@@ -22,9 +22,10 @@ async function buildSystemPrompt(authHeader: string | null): Promise<string> {
   ]);
   const profileArr = profileR.ok ? await profileR.json() : [];
   const realTxs = (txR.ok ? await txR.json() : []) as Tx[];
-  const taxTxs = computeTaxEvents();
+  const profile = profileArr[0] ?? { current_balance: 0, threshold: 0, company_name: "Mitt företag", country: "SE" };
+  const country = (profile.country ?? "SE") as "SE" | "NO" | "GB" | "US";
+  const taxTxs = computeTaxEvents(country);
   const txs = [...realTxs, ...taxTxs].sort((a, b) => a.due_date.localeCompare(b.due_date));
-  const profile = profileArr[0] ?? { current_balance: 0, threshold: 0, company_name: "Mitt företag" };
 
   const forecast = computeForecast(
     Number(profile.current_balance) || 0,

@@ -40,28 +40,61 @@ export type Database = {
       }
       profiles: {
         Row: {
+          accounting_provider: string
           company_name: string | null
+          country: string
           created_at: string
+          currency: string
           current_balance: number
           id: string
+          language: string
           threshold: number
           updated_at: string
         }
         Insert: {
+          accounting_provider?: string
           company_name?: string | null
+          country?: string
           created_at?: string
+          currency?: string
           current_balance?: number
           id: string
+          language?: string
           threshold?: number
           updated_at?: string
         }
         Update: {
+          accounting_provider?: string
           company_name?: string | null
+          country?: string
           created_at?: string
+          currency?: string
           current_balance?: number
           id?: string
+          language?: string
           threshold?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      provider_waitlist: {
+        Row: {
+          created_at: string
+          id: string
+          provider: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          provider: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          provider?: string
+          user_id?: string
         }
         Relationships: []
       }

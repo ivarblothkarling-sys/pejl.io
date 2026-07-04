@@ -15,6 +15,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as AuthenticatedInstallningarRouteImport } from './routes/_authenticated/installningar'
 
 const IntegritetspolicyRoute = IntegritetspolicyRouteImport.update({
   id: '/integritetspolicy',
@@ -45,17 +46,25 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedInstallningarRoute =
+  AuthenticatedInstallningarRouteImport.update({
+    id: '/installningar',
+    path: '/installningar',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/auth': typeof AuthRoute
   '/integritetspolicy': typeof IntegritetspolicyRoute
+  '/installningar': typeof AuthenticatedInstallningarRoute
   '/api/chat': typeof ApiChatRoute
   '/share/$token': typeof ShareTokenRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/integritetspolicy': typeof IntegritetspolicyRoute
+  '/installningar': typeof AuthenticatedInstallningarRoute
   '/api/chat': typeof ApiChatRoute
   '/share/$token': typeof ShareTokenRoute
   '/': typeof AuthenticatedIndexRoute
@@ -65,6 +74,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/integritetspolicy': typeof IntegritetspolicyRoute
+  '/_authenticated/installningar': typeof AuthenticatedInstallningarRoute
   '/api/chat': typeof ApiChatRoute
   '/share/$token': typeof ShareTokenRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
@@ -75,15 +85,23 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/integritetspolicy'
+    | '/installningar'
     | '/api/chat'
     | '/share/$token'
   fileRoutesByTo: FileRoutesByTo
-  to: '/auth' | '/integritetspolicy' | '/api/chat' | '/share/$token' | '/'
+  to:
+    | '/auth'
+    | '/integritetspolicy'
+    | '/installningar'
+    | '/api/chat'
+    | '/share/$token'
+    | '/'
   id:
     | '__root__'
     | '/_authenticated'
     | '/auth'
     | '/integritetspolicy'
+    | '/_authenticated/installningar'
     | '/api/chat'
     | '/share/$token'
     | '/_authenticated/'
@@ -141,14 +159,23 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/installningar': {
+      id: '/_authenticated/installningar'
+      path: '/installningar'
+      fullPath: '/installningar'
+      preLoaderRoute: typeof AuthenticatedInstallningarRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedInstallningarRoute: typeof AuthenticatedInstallningarRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedInstallningarRoute: AuthenticatedInstallningarRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }
 
@@ -165,13 +192,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useChat } from "@ai-sdk/react";
@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, BellRing, CalendarClock, Check, Copy, Landmark, LogOut, PlayCircle, Share2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
+import { AlertTriangle, BellRing, CalendarClock, Check, Copy, Landmark, LogOut, PlayCircle, Settings as SettingsIcon, Share2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -239,9 +239,16 @@ function DashboardPage() {
               <div className="text-xs text-muted-foreground leading-none mt-0.5">{profile.company_name}</div>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-muted-foreground">
-            <LogOut className="size-4" /> Logga ut
-          </Button>
+          <div className="flex items-center gap-1">
+            <Link to="/installningar">
+              <Button variant="ghost" size="sm" className="text-muted-foreground">
+                <SettingsIcon className="size-4" /> Inställningar
+              </Button>
+            </Link>
+            <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-muted-foreground">
+              <LogOut className="size-4" /> Logga ut
+            </Button>
+          </div>
         </div>
       </header>
 
