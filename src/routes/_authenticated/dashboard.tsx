@@ -479,16 +479,43 @@ function DashboardPage() {
                     fontSize: 11,
                   }}
                 />
+                <ReferenceLine
+                  x={chartData[CONFIRMED_DAYS]?.label}
+                  stroke="var(--color-border)"
+                  strokeDasharray="2 3"
+                  label={{
+                    value: "Baserat på historiska mönster",
+                    position: "insideTopRight",
+                    fill: "var(--color-muted-foreground)",
+                    fontSize: 10,
+                  }}
+                />
                 <Area
                   type="monotone"
-                  dataKey="balance"
+                  dataKey="confirmed"
                   stroke="var(--color-chart-1)"
                   strokeWidth={2.5}
                   fill="url(#balanceFill)"
+                  connectNulls={false}
                   isAnimationActive
                   animationDuration={1200}
                   animationEasing="ease-out"
                 />
+                <Area
+                  type="monotone"
+                  dataKey="indicative"
+                  stroke="var(--color-chart-1)"
+                  strokeOpacity={0.55}
+                  strokeWidth={2}
+                  strokeDasharray="5 4"
+                  fill="url(#balanceFill)"
+                  fillOpacity={0.4}
+                  connectNulls={false}
+                  isAnimationActive
+                  animationDuration={1200}
+                  animationEasing="ease-out"
+                />
+                {indicativeLabelPoint && null}
               </AreaChart>
             </ResponsiveContainer>
           </div>
