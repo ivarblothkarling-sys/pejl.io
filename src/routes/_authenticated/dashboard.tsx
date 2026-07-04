@@ -615,7 +615,7 @@ function DashboardPage() {
               )}
               {!summaryLoading && !summary && (
                 <p className="text-muted-foreground text-sm">
-                  Få en kort text om hur det ser ut just nu och varningar för kommande 14 dagar.
+                  Få en kort text om hur det ser ut just nu och varningar för kommande 30 dagar.
                 </p>
               )}
             </div>
@@ -796,7 +796,7 @@ function ChatInner({
           {messages.length === 0 ? (
             <ConversationEmptyState
               title="Vad vill du veta?"
-              description="Pejl svarar baserat på din Fortnox-data (mock) och 14-dagars prognosen."
+              description="Pejl svarar baserat på din Fortnox-data (mock) och 30-dagars prognosen."
             >
               <div className="flex flex-wrap gap-2 justify-center mt-3">
                 {SUGGESTED.map((s) => (

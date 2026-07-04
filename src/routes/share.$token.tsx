@@ -75,7 +75,7 @@ function SharedDashboard() {
           <KpiCard icon={<Wallet className="size-4" />} label="Dagens saldo" value={formatSEK(forecast.startBalance)} />
           <KpiCard
             icon={forecast.endBalance >= forecast.startBalance ? <TrendingUp className="size-4 text-success" /> : <TrendingDown className="size-4 text-destructive" />}
-            label="Om 14 dagar"
+            label="Om 30 dagar"
             value={formatSEK(forecast.endBalance)}
           />
           <KpiCard
@@ -110,7 +110,7 @@ function SharedDashboard() {
         )}
 
         <section className="bg-card border border-border rounded-2xl p-4 md:p-6 shadow-sm">
-          <h2 className="text-base font-semibold mb-1">Prognos 14 dagar framåt</h2>
+          <h2 className="text-base font-semibold mb-1">Prognos 30 dagar framåt</h2>
           <p className="text-xs text-muted-foreground mb-4">Baserat på bokförd data i Fortnox (mock).</p>
           <div className="h-64 -mx-2">
             <ResponsiveContainer width="100%" height="100%">
