@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { ArrowLeft, BellRing, Check, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, BellRing, Check, FileUp, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -9,11 +9,13 @@ import {
   getUserSettings,
   updateUserSettings,
   joinProviderWaitlist,
+  importSieData,
 } from "@/lib/api/settings.functions";
 import { AVAILABLE_PROVIDERS } from "@/lib/accounting/accountingService";
 import { AVAILABLE_CURRENCIES } from "@/lib/i18n/format";
 import { AVAILABLE_LANGUAGES, type Language } from "@/lib/i18n/strings";
 import { useT } from "@/lib/i18n/useT";
+import { decodeCP437, parseSie, deriveForecast } from "@/lib/accounting/sie";
 
 export const Route = createFileRoute("/_authenticated/installningar")({
   head: () => ({
