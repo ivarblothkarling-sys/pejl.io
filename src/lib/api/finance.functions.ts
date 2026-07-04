@@ -33,7 +33,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
       Number(profile.current_balance) || 0,
       Number(profile.threshold) || 0,
       transactions,
-      14,
+      30,
     );
     const suggestions = computeSuggestions(forecast, transactions);
 
@@ -74,7 +74,7 @@ export const generateWeeklySummary = createServerFn({ method: "POST" })
       Number(profile.current_balance) || 0,
       Number(profile.threshold) || 0,
       txs,
-      14,
+      30,
     );
 
 
@@ -91,11 +91,11 @@ export const generateWeeklySummary = createServerFn({ method: "POST" })
 
     const prompt = `Du är Pejl — en pragmatisk ekonomiassistent för svenska småföretagare.
 Skriv en kort, vänlig veckosammanfattning (max 6 meningar, på svenska) baserat på datan nedan.
-Lyft fram dagens saldo, lägsta saldot kommande 14 dagar, eventuell varning, samt 1–2 konkreta råd.
+Lyft fram dagens saldo, lägsta saldot kommande 30 dagar, eventuell varning, samt 1–2 konkreta råd.
 
 Företag: ${profile.company_name}
 Dagens saldo: ${formatSEK(forecast.startBalance)}
-Prognos om 14 dagar: ${formatSEK(forecast.endBalance)}
+Prognos om 30 dagar: ${formatSEK(forecast.endBalance)}
 Lägsta saldo: ${formatSEK(forecast.minBalance)} (${forecast.minDate})
 ${breachText}
 

@@ -11,7 +11,7 @@ export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
       { title: "Logga in — Pejl" },
-      { name: "description", content: "Logga in på Pejl och få koll på företagets likviditet 14 dagar framåt." },
+      { name: "description", content: "Logga in på Pejl och få koll på företagets likviditet 30 dagar framåt." },
     ],
   }),
   component: AuthPage,
@@ -64,7 +64,7 @@ function AuthPage() {
         <div className="flex flex-col items-center mb-8">
           <img src={logo} alt="Pejl" width={56} height={56} className="mb-3" />
           <h1 className="text-3xl font-semibold tracking-tight">Pejl</h1>
-          <p className="text-sm text-muted-foreground mt-1">Håll koll på pengarna — 14 dagar framåt.</p>
+          <p className="text-sm text-muted-foreground mt-1">Håll koll på pengarna — 30 dagar framåt.</p>
         </div>
 
         <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">

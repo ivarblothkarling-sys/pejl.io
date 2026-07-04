@@ -49,7 +49,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
     meta: [
       { title: "Översikt — Pejl" },
-      { name: "description", content: "Dagens saldo och 14-dagars likviditetsprognos för ditt företag." },
+      { name: "description", content: "Dagens saldo och 30-dagars likviditetsprognos för ditt företag." },
     ],
   }),
   component: DashboardPage,
@@ -169,7 +169,7 @@ function DashboardPage() {
     ];
     const startBalance = 8200;
     const threshold = 15000;
-    const fc = computeForecast(startBalance, threshold, txs, 14, today);
+    const fc = computeForecast(startBalance, threshold, txs, 30, today);
     const sugg = computeSuggestions(fc, txs, today);
     return {
       ...data,
@@ -192,11 +192,15 @@ function DashboardPage() {
   const { profile, forecast, transactions } = view;
   const hasBreach = !!forecast.breachDate;
 
-  const chartData = forecast.points.map((p) => ({
+  const CONFIRMED_DAYS = 14;
+  const chartData = forecast.points.map((p, i) => ({
     ...p,
     label: formatDateSv(p.date),
     threshold: forecast.threshold,
+    confirmed: i <= CONFIRMED_DAYS ? p.balance : null,
+    indicative: i >= CONFIRMED_DAYS ? p.balance : null,
   }));
+  
 
   const upcomingUnpaid = transactions.filter((t) => !t.paid).slice(0, 8);
 
@@ -293,7 +297,7 @@ function DashboardPage() {
           <KpiCard icon={<Wallet className="size-4" />} label="Dagens saldo" value={<CountUp value={forecast.startBalance} duration={800} />} />
           <KpiCard
             icon={forecast.endBalance >= forecast.startBalance ? <TrendingUp className="size-4 text-success" /> : <TrendingDown className="size-4 text-destructive" />}
-            label="Om 14 dagar"
+            label="Om 30 dagar"
             value={formatSEK(forecast.endBalance)}
           />
           <KpiCard
@@ -413,8 +417,21 @@ function DashboardPage() {
         <section className="bg-card border border-border rounded-2xl p-4 md:p-6 shadow-sm">
           <div className="flex items-start justify-between mb-4">
             <div>
-              <h2 className="text-base font-semibold">Prognos 14 dagar framåt</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Baserat på kända in- och utbetalningar</p>
+              <h2 className="text-base font-semibold">Prognos 30 dagar framåt</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Bekräftad dag 0–14, indikativ dag 15–30</p>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-3 h-0.5 bg-[var(--color-chart-1)]" />
+                Bekräftad
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="inline-block w-3 h-0.5 opacity-60"
+                  style={{ borderTop: "2px dashed var(--color-chart-1)", background: "transparent" }}
+                />
+                Indikativ
+              </span>
             </div>
           </div>
           <div className="h-64 -mx-2">
@@ -462,16 +479,43 @@ function DashboardPage() {
                     fontSize: 11,
                   }}
                 />
+                <ReferenceLine
+                  x={chartData[CONFIRMED_DAYS]?.label}
+                  stroke="var(--color-border)"
+                  strokeDasharray="2 3"
+                  label={{
+                    value: "Baserat på historiska mönster",
+                    position: "insideTopRight",
+                    fill: "var(--color-muted-foreground)",
+                    fontSize: 10,
+                  }}
+                />
                 <Area
                   type="monotone"
-                  dataKey="balance"
+                  dataKey="confirmed"
                   stroke="var(--color-chart-1)"
                   strokeWidth={2.5}
                   fill="url(#balanceFill)"
+                  connectNulls={false}
                   isAnimationActive
                   animationDuration={1200}
                   animationEasing="ease-out"
                 />
+                <Area
+                  type="monotone"
+                  dataKey="indicative"
+                  stroke="var(--color-chart-1)"
+                  strokeOpacity={0.55}
+                  strokeWidth={2}
+                  strokeDasharray="5 4"
+                  fill="url(#balanceFill)"
+                  fillOpacity={0.4}
+                  connectNulls={false}
+                  isAnimationActive
+                  animationDuration={1200}
+                  animationEasing="ease-out"
+                />
+                
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -571,7 +615,7 @@ function DashboardPage() {
               )}
               {!summaryLoading && !summary && (
                 <p className="text-muted-foreground text-sm">
-                  Få en kort text om hur det ser ut just nu och varningar för kommande 14 dagar.
+                  Få en kort text om hur det ser ut just nu och varningar för kommande 30 dagar.
                 </p>
               )}
             </div>
@@ -752,7 +796,7 @@ function ChatInner({
           {messages.length === 0 ? (
             <ConversationEmptyState
               title="Vad vill du veta?"
-              description="Pejl svarar baserat på din Fortnox-data (mock) och 14-dagars prognosen."
+              description="Pejl svarar baserat på din Fortnox-data (mock) och 30-dagars prognosen."
             >
               <div className="flex flex-wrap gap-2 justify-center mt-3">
                 {SUGGESTED.map((s) => (

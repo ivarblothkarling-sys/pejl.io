@@ -4,7 +4,7 @@ import { useEffect } from "react";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Pejl — Din AI-ekonomiassistent som ser 14 dagar framåt" },
+      { title: "Pejl — Din AI-ekonomiassistent som ser 30 dagar framåt" },
       {
         name: "description",
         content:
@@ -13,7 +13,7 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: "Pejl — Din AI-ekonomiassistent" },
       {
         property: "og:description",
-        content: "Se 14 dagar framåt i kassaflödet. Få varningar innan pengarna tar slut.",
+        content: "Se 30 dagar framåt i kassaflödet. Få varningar innan pengarna tar slut.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -593,7 +593,7 @@ function Landing() {
           <span className="hi">Din AI-ekonomiassistent</span>
           <br />
           <span className="hi">som ser </span>
-          <span className="acc">14 dagar framåt</span>
+          <span className="acc">30 dagar framåt</span>
         </h1>
 
         <p className="hero-sub">
@@ -670,7 +670,7 @@ function Landing() {
             <h3 className="sc-title">Momsen glöms alltid</h3>
             <p className="sc-body">
               Skatteinbetalningar syns inte i saldot. De syns inte i bokföringen förrän de slagit
-              igenom. Pejl visar dem 14 dagar i förväg — så du kan planera i lugn och ro.
+              igenom. Pejl visar dem 30 dagar i förväg — så du kan planera i lugn och ro.
             </p>
             <span className="sc-amount">Vanligaste orsaken till likviditetsstress</span>
           </div>
@@ -709,7 +709,7 @@ function Landing() {
               <h3 className="step-title">AI räknar framåt</h3>
               <p className="step-body">
                 Pejl analyserar fakturor, löner, hyra och skattebetalningar och beräknar ett
-                kassaflöde 14 dagar framåt. Automatiskt, varje dag.
+                kassaflöde 30 dagar framåt. Automatiskt, varje dag.
               </p>
               <div className="step-visual">
                 {"→ Prognos uppdateras\n→ Mönster identifieras\n→ Risker beräknas"}
@@ -764,7 +764,7 @@ function Landing() {
                 <div className="db-card-val">48 500 kr</div>
               </div>
               <div className="db-card">
-                <div className="db-card-label">Om 14 dagar</div>
+                <div className="db-card-label">Om 30 dagar</div>
                 <div className="db-card-val red">12 300 kr</div>
               </div>
               <div className="db-card">
@@ -797,7 +797,7 @@ function Landing() {
 
             <div className="db-chart-wrap">
               <div className="db-chart-label">
-                Prognos 14 dagar framåt — baserat på kända in- och utbetalningar
+                Prognos 30 dagar framåt — baserat på kända in- och utbetalningar
               </div>
               <div className="db-chart">
                 <svg viewBox="0 0 700 110" preserveAspectRatio="none">
@@ -929,7 +929,7 @@ function Landing() {
                 <div>
                   <h4>Inga fler akutsamtal</h4>
                   <p>
-                    Klienten ser problemet i Pejl 14 dagar innan det uppstår. Du slipper
+                    Klienten ser problemet i Pejl 30 dagar innan det uppstår. Du slipper
                     brandkårsutryckningarna.
                   </p>
                 </div>
@@ -994,7 +994,7 @@ function Landing() {
                 Koppla Fortnox, få din prognos. Säg upp när som helst. Ingen bindningstid.
               </p>
               <ul className="price-features">
-                <li>14-dagarsprognos kopplad till Fortnox</li>
+                <li>30-dagarsprognos kopplad till Fortnox</li>
                 <li>Proaktiva likviditetsvarningar</li>
                 <li>Skattebevakning (moms, AGI, F-skatt)</li>
                 <li>AI-chatt på svenska</li>

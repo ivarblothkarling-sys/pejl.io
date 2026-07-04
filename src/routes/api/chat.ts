@@ -44,7 +44,7 @@ async function buildSystemPrompt(authHeader: string | null): Promise<string> {
 
   const breach = forecast.breachDate
     ? `VARNING: saldot går under gränsen ${formatSEK(forecast.threshold)} den ${forecast.breachDate} (saldo då ca ${formatSEK(forecast.breachAmount ?? 0)}).`
-    : `Ingen prognosvarning de närmaste 14 dagarna.`;
+    : `Ingen prognosvarning de närmaste 30 dagarna.`;
 
   const suggestions = computeSuggestions(forecast, txs);
   const suggestionsBlock = suggestions.length
@@ -84,7 +84,7 @@ ${profile.company_name}
 == Dagens saldo ==
 ${formatSEK(forecast.startBalance)}
 
-== Prognos 14 dagar ==
+== Prognos 30 dagar ==
 Slutsaldo: ${formatSEK(forecast.endBalance)}
 Lägsta saldo: ${formatSEK(forecast.minBalance)} (${forecast.minDate})
 Vald varningsgräns: ${formatSEK(forecast.threshold)}
