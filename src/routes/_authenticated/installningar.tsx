@@ -129,7 +129,7 @@ function SettingsPage() {
     <div className="min-h-screen bg-gradient-to-b from-background via-secondary/30 to-background pb-24">
       <header className="border-b border-border bg-background/80 backdrop-blur sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => navigate({ to: "/" })}>
+          <Button variant="ghost" size="sm" onClick={() => navigate({ to: "/dashboard" })}>
             <ArrowLeft className="size-4" /> {t("settings.back")}
           </Button>
         </div>

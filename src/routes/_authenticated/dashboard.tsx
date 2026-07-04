@@ -45,7 +45,7 @@ import { createShareLink } from "@/lib/api/share.functions";
 
 import logo from "@/assets/pejl-logo.png";
 
-export const Route = createFileRoute("/_authenticated/")({
+export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
     meta: [
       { title: "Översikt — Pejl" },
