@@ -12,10 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IntegritetspolicyRouteImport } from './routes/integritetspolicy'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
-import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AuthenticatedInstallningarRouteImport } from './routes/_authenticated/installningar'
+import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 
 const IntegritetspolicyRoute = IntegritetspolicyRouteImport.update({
   id: '/integritetspolicy',
@@ -30,11 +30,6 @@ const AuthRoute = AuthRouteImport.update({
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const ShareTokenRoute = ShareTokenRouteImport.update({
   id: '/share/$token',
@@ -52,32 +47,39 @@ const AuthenticatedInstallningarRoute =
     path: '/installningar',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof AuthenticatedIndexRoute
+  '/': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/integritetspolicy': typeof IntegritetspolicyRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
   '/installningar': typeof AuthenticatedInstallningarRoute
   '/api/chat': typeof ApiChatRoute
   '/share/$token': typeof ShareTokenRoute
 }
 export interface FileRoutesByTo {
+  '/': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/integritetspolicy': typeof IntegritetspolicyRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
   '/installningar': typeof AuthenticatedInstallningarRoute
   '/api/chat': typeof ApiChatRoute
   '/share/$token': typeof ShareTokenRoute
-  '/': typeof AuthenticatedIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/integritetspolicy': typeof IntegritetspolicyRoute
+  '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/installningar': typeof AuthenticatedInstallningarRoute
   '/api/chat': typeof ApiChatRoute
   '/share/$token': typeof ShareTokenRoute
-  '/_authenticated/': typeof AuthenticatedIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -85,26 +87,28 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/integritetspolicy'
+    | '/dashboard'
     | '/installningar'
     | '/api/chat'
     | '/share/$token'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/'
     | '/auth'
     | '/integritetspolicy'
+    | '/dashboard'
     | '/installningar'
     | '/api/chat'
     | '/share/$token'
-    | '/'
   id:
     | '__root__'
     | '/_authenticated'
     | '/auth'
     | '/integritetspolicy'
+    | '/_authenticated/dashboard'
     | '/_authenticated/installningar'
     | '/api/chat'
     | '/share/$token'
-    | '/_authenticated/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -138,13 +142,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/': {
-      id: '/_authenticated/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof AuthenticatedIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/share/$token': {
       id: '/share/$token'
       path: '/share/$token'
@@ -166,17 +163,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedInstallningarRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/dashboard': {
+      id: '/_authenticated/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedInstallningarRoute: typeof AuthenticatedInstallningarRoute
-  AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedInstallningarRoute: AuthenticatedInstallningarRoute,
-  AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -192,13 +196,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
