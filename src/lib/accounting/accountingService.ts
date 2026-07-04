@@ -39,13 +39,6 @@ export const accountingService = {
 };
 
 export const AVAILABLE_PROVIDERS: {
-  id: AccountingProviderId;
-  name: string;
-  country: string;
-  flag: string;
-  status: "available" | "coming_soon";
-}[] = [
-export const AVAILABLE_PROVIDERS: {
   id: AccountingProviderId | "sie";
   name: string;
   country: string;
