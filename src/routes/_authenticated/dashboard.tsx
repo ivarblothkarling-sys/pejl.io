@@ -297,7 +297,7 @@ function DashboardPage() {
           <KpiCard icon={<Wallet className="size-4" />} label="Dagens saldo" value={<CountUp value={forecast.startBalance} duration={800} />} />
           <KpiCard
             icon={forecast.endBalance >= forecast.startBalance ? <TrendingUp className="size-4 text-success" /> : <TrendingDown className="size-4 text-destructive" />}
-            label="Om 14 dagar"
+            label="Om 30 dagar"
             value={formatSEK(forecast.endBalance)}
           />
           <KpiCard
