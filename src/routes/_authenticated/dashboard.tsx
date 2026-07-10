@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, BellRing, CalendarClock, Check, Copy, Landmark, Link2, LogOut, PlayCircle, Settings as SettingsIcon, Share2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
+import { AlertTriangle, BellRing, CalendarClock, Check, CheckCircle2, Copy, Landmark, Link2, LogOut, PlayCircle, Settings as SettingsIcon, Share2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -351,6 +351,21 @@ function DashboardPage() {
         </section>
 
         <div className="flex flex-wrap items-center gap-3 -mt-2">
+          {fortnoxConnected ? (
+            <span className="inline-flex items-center gap-2 text-sm font-medium text-success bg-success/10 border border-success/30 rounded-full px-3 py-1.5">
+              <CheckCircle2 className="size-4" /> Fortnox ansluten
+            </span>
+          ) : (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleConnectFortnox}
+              disabled={fortnoxLoading}
+            >
+              <Link2 className="size-4" />
+              {fortnoxLoading ? "Öppnar Fortnox…" : "Koppla Fortnox"}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -371,6 +386,7 @@ function DashboardPage() {
             </button>
           )}
         </div>
+
 
         {editingThreshold && (
           <div className="bg-card border border-border rounded-xl p-4 flex items-end gap-2 max-w-md">
