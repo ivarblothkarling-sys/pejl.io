@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, BellRing, CalendarClock, Check, Copy, Landmark, LogOut, PlayCircle, Settings as SettingsIcon, Share2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
+import { AlertTriangle, BellRing, CalendarClock, Check, Copy, Landmark, Link2, LogOut, PlayCircle, Settings as SettingsIcon, Share2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,7 @@ import {
   updateThreshold,
 } from "@/lib/api/finance.functions";
 import { createShareLink } from "@/lib/api/share.functions";
+import { getFortnoxAuthUrl, getFortnoxStatus } from "@/lib/api/fortnox.functions";
 
 import logo from "@/assets/pejl-logo.png";
 
@@ -69,6 +70,10 @@ function DashboardPage() {
   const [shareLoading, setShareLoading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [demoStage, setDemoStage] = useState<null | "critical" | "resolved">(null);
+  const [fortnoxConnected, setFortnoxConnected] = useState(false);
+  const [fortnoxLoading, setFortnoxLoading] = useState(false);
+
+
 
 
   const refresh = async () => {
@@ -85,7 +90,31 @@ function DashboardPage() {
 
   useEffect(() => {
     refresh();
+    getFortnoxStatus()
+      .then((s) => setFortnoxConnected(s.connected))
+      .catch(() => {});
+    // Show success toast if we just came back from the OAuth callback
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("fortnox") === "connected") {
+        toast.success("Fortnox ansluten");
+        const url = new URL(window.location.href);
+        url.searchParams.delete("fortnox");
+        window.history.replaceState({}, "", url.toString());
+      }
+    } catch {}
   }, []);
+
+  const handleConnectFortnox = async () => {
+    setFortnoxLoading(true);
+    try {
+      const { url } = await getFortnoxAuthUrl();
+      window.location.href = url;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte starta Fortnox-koppling");
+      setFortnoxLoading(false);
+    }
+  };
 
   const generateSummaryFn = useServerFn(generateWeeklySummary);
   const handleWeeklySummary = async () => {
