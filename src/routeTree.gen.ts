@@ -17,6 +17,7 @@ import { Route as ShareTokenRouteImport } from './routes/share.$token'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AuthenticatedInstallningarRouteImport } from './routes/_authenticated/installningar'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthFortnoxCallbackRouteImport } from './routes/auth.fortnox.callback'
 
 const IntegritetspolicyRoute = IntegritetspolicyRouteImport.update({
   id: '/integritetspolicy',
@@ -58,35 +59,43 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthFortnoxCallbackRoute = AuthFortnoxCallbackRouteImport.update({
+  id: '/fortnox/callback',
+  path: '/fortnox/callback',
+  getParentRoute: () => AuthRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/auth': typeof AuthRoute
+  '/auth': typeof AuthRouteWithChildren
   '/integritetspolicy': typeof IntegritetspolicyRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/installningar': typeof AuthenticatedInstallningarRoute
   '/api/chat': typeof ApiChatRoute
   '/share/$token': typeof ShareTokenRoute
+  '/auth/fortnox/callback': typeof AuthFortnoxCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/auth': typeof AuthRoute
+  '/auth': typeof AuthRouteWithChildren
   '/integritetspolicy': typeof IntegritetspolicyRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/installningar': typeof AuthenticatedInstallningarRoute
   '/api/chat': typeof ApiChatRoute
   '/share/$token': typeof ShareTokenRoute
+  '/auth/fortnox/callback': typeof AuthFortnoxCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
-  '/auth': typeof AuthRoute
+  '/auth': typeof AuthRouteWithChildren
   '/integritetspolicy': typeof IntegritetspolicyRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/installningar': typeof AuthenticatedInstallningarRoute
   '/api/chat': typeof ApiChatRoute
   '/share/$token': typeof ShareTokenRoute
+  '/auth/fortnox/callback': typeof AuthFortnoxCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -98,6 +107,7 @@ export interface FileRouteTypes {
     | '/installningar'
     | '/api/chat'
     | '/share/$token'
+    | '/auth/fortnox/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -107,6 +117,7 @@ export interface FileRouteTypes {
     | '/installningar'
     | '/api/chat'
     | '/share/$token'
+    | '/auth/fortnox/callback'
   id:
     | '__root__'
     | '/'
@@ -117,12 +128,13 @@ export interface FileRouteTypes {
     | '/_authenticated/installningar'
     | '/api/chat'
     | '/share/$token'
+    | '/auth/fortnox/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
-  AuthRoute: typeof AuthRoute
+  AuthRoute: typeof AuthRouteWithChildren
   IntegritetspolicyRoute: typeof IntegritetspolicyRoute
   ApiChatRoute: typeof ApiChatRoute
   ShareTokenRoute: typeof ShareTokenRoute
@@ -186,6 +198,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/auth/fortnox/callback': {
+      id: '/auth/fortnox/callback'
+      path: '/fortnox/callback'
+      fullPath: '/auth/fortnox/callback'
+      preLoaderRoute: typeof AuthFortnoxCallbackRouteImport
+      parentRoute: typeof AuthRoute
+    }
   }
 }
 
@@ -202,10 +221,20 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
 const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
+interface AuthRouteChildren {
+  AuthFortnoxCallbackRoute: typeof AuthFortnoxCallbackRoute
+}
+
+const AuthRouteChildren: AuthRouteChildren = {
+  AuthFortnoxCallbackRoute: AuthFortnoxCallbackRoute,
+}
+
+const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
-  AuthRoute: AuthRoute,
+  AuthRoute: AuthRouteWithChildren,
   IntegritetspolicyRoute: IntegritetspolicyRoute,
   ApiChatRoute: ApiChatRoute,
   ShareTokenRoute: ShareTokenRoute,
@@ -213,13 +242,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

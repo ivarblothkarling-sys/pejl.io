@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { Link2 } from "lucide-react";
+import { getFortnoxAuthUrl } from "@/lib/api/fortnox.functions";
 import logo from "@/assets/pejl-logo.png";
 
 export const Route = createFileRoute("/auth")({
@@ -88,6 +90,32 @@ function AuthPage() {
             </Button>
           </form>
 
+          <div className="mt-4 pt-4 border-t border-border">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={async () => {
+                try {
+                  const { data } = await supabase.auth.getUser();
+                  if (!data.user) {
+                    toast.error("Logga in först för att koppla Fortnox.");
+                    return;
+                  }
+                  const { url } = await getFortnoxAuthUrl();
+                  window.location.href = url;
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Kunde inte starta Fortnox-koppling");
+                }
+              }}
+            >
+              <Link2 className="size-4" /> Koppla Fortnox
+            </Button>
+            <p className="text-[11px] text-center text-muted-foreground mt-2">
+              Kräver inloggning — logga in eller skapa konto först.
+            </p>
+          </div>
+
           <button
             type="button"
             onClick={() => setMode(mode === "signup" ? "signin" : "signup")}
@@ -95,6 +123,7 @@ function AuthPage() {
           >
             {mode === "signup" ? "Har du redan konto? Logga in" : "Inget konto? Skapa ett"}
           </button>
+
         </div>
 
         <p className="text-xs text-center text-muted-foreground mt-6">
