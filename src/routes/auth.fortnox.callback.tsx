@@ -39,7 +39,8 @@ function FortnoxCallback() {
         if (err) throw new Error(err);
         if (!code) throw new Error("Ingen kod mottagen från Fortnox.");
         const state = url.searchParams.get("state") ?? undefined;
-        await exchange({ data: { code, state } });
+        const redirectUri = `${window.location.origin}/auth/fortnox/callback`;
+        await exchange({ data: { code, state, redirectUri } });
         setStatus("ok");
         setMessage("Fortnox är anslutet.");
         setTimeout(() => {
