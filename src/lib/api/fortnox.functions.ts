@@ -66,6 +66,7 @@ export const exchangeFortnoxCode = createServerFn({ method: "POST" })
     z.object({
       code: z.string().min(1),
       state: z.string().optional(),
+      redirectUri: z.string().url().optional(),
     }),
   )
   .handler(async ({ data, context }) => {
@@ -81,7 +82,7 @@ export const exchangeFortnoxCode = createServerFn({ method: "POST" })
     const body = new URLSearchParams({
       grant_type: "authorization_code",
       code: data.code,
-      redirect_uri: getRedirectUri(),
+      redirect_uri: getRedirectUri(data.redirectUri),
     });
 
     const res = await fetch(FORTNOX_TOKEN_URL, {
