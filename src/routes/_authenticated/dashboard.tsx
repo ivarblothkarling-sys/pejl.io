@@ -107,11 +107,15 @@ function DashboardPage() {
   }, []);
 
   const handleConnectFortnox = async () => {
+    const redirectUri = `${window.location.origin}/auth/fortnox/callback`;
+    console.log("[Fortnox] Koppla-knapp klickad. redirectUri =", redirectUri);
     setFortnoxLoading(true);
     try {
-      const { url } = await getFortnoxAuthUrl();
+      const { url } = await getFortnoxAuthUrl({ data: { redirectUri } });
+      console.log("[Fortnox] OAuth-URL mottagen:", url);
       window.location.href = url;
     } catch (err) {
+      console.error("[Fortnox] Kunde inte starta OAuth:", err);
       toast.error(err instanceof Error ? err.message : "Kunde inte starta Fortnox-koppling");
       setFortnoxLoading(false);
     }
