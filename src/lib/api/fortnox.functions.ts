@@ -26,13 +26,26 @@ export const getFortnoxAuthUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { redirectUri?: string } | undefined) => input ?? {})
   .handler(async ({ data }) => {
+    // Läs server-side env (aldrig import.meta.env för secrets).
     const clientId = process.env.FORTNOX_CLIENT_ID;
+    console.log(
+      "[Fortnox] getFortnoxAuthUrl — FORTNOX_CLIENT_ID present:",
+      !!clientId,
+      "length:",
+      clientId?.length ?? 0,
+      "prefix:",
+      clientId ? clientId.slice(0, 4) : "(none)",
+    );
     if (!clientId) {
+      console.error(
+        "[Fortnox] FORTNOX_CLIENT_ID saknas i process.env. Kontrollera att secreten är satt i Lovable Cloud.",
+      );
       throw new Error(
-        "Fortnox är inte konfigurerad — FORTNOX_CLIENT_ID saknas.",
+        "Fortnox är inte konfigurerad — FORTNOX_CLIENT_ID saknas i miljövariablerna.",
       );
     }
     const redirectUri = getRedirectUri(data?.redirectUri);
+    console.log("[Fortnox] Bygger OAuth-URL med redirectUri:", redirectUri);
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
@@ -41,7 +54,9 @@ export const getFortnoxAuthUrl = createServerFn({ method: "POST" })
       response_type: "code",
       access_type: "offline",
     });
-    return { url: `${FORTNOX_AUTH_URL}?${params.toString()}`, redirectUri };
+    const url = `${FORTNOX_AUTH_URL}?${params.toString()}`;
+    console.log("[Fortnox] OAuth-URL genererad:", url);
+    return { url, redirectUri };
   });
 
 export const getFortnoxStatus = createServerFn({ method: "GET" })
