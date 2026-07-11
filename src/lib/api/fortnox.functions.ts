@@ -14,31 +14,34 @@ const FORTNOX_SCOPES = [
   "customer",
 ].join(" ");
 
-function getRedirectUri(): string {
+function getRedirectUri(override?: string): string {
+  if (override && /^https?:\/\//.test(override)) return override;
   return (
     process.env.FORTNOX_REDIRECT_URI ??
     "http://localhost:8080/auth/fortnox/callback"
   );
 }
 
-export const getFortnoxAuthUrl = createServerFn({ method: "GET" })
+export const getFortnoxAuthUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async () => {
+  .inputValidator((input: { redirectUri?: string } | undefined) => input ?? {})
+  .handler(async ({ data }) => {
     const clientId = process.env.FORTNOX_CLIENT_ID;
     if (!clientId) {
       throw new Error(
         "Fortnox är inte konfigurerad — FORTNOX_CLIENT_ID saknas.",
       );
     }
+    const redirectUri = getRedirectUri(data?.redirectUri);
     const params = new URLSearchParams({
       client_id: clientId,
-      redirect_uri: getRedirectUri(),
+      redirect_uri: redirectUri,
       scope: FORTNOX_SCOPES,
       state: "pejl",
       response_type: "code",
       access_type: "offline",
     });
-    return { url: `${FORTNOX_AUTH_URL}?${params.toString()}` };
+    return { url: `${FORTNOX_AUTH_URL}?${params.toString()}`, redirectUri };
   });
 
 export const getFortnoxStatus = createServerFn({ method: "GET" })
