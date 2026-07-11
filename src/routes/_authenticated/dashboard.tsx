@@ -1,3 +1,4 @@
+// Pejl dashboard – Fortnox-integration aktiv
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
