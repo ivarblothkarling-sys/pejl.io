@@ -402,9 +402,27 @@ function DashboardPage() {
 
         <div className="flex flex-wrap items-center gap-3 -mt-2">
           {fortnoxConnected ? (
-            <span className="inline-flex items-center gap-2 text-sm font-medium text-success bg-success/10 border border-success/30 rounded-full px-3 py-1.5">
-              <CheckCircle2 className="size-4" /> Fortnox ansluten
-            </span>
+            <>
+              <span className="inline-flex items-center gap-2 text-sm font-medium text-success bg-success/10 border border-success/30 rounded-full px-3 py-1.5">
+                <CheckCircle2 className="size-4" /> Fortnox ansluten
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSyncFortnox}
+                disabled={fortnoxSyncing}
+              >
+                {fortnoxSyncing ? "Synkar…" : "Synka Fortnox"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDisconnectFortnox}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                Koppla bort
+              </Button>
+            </>
           ) : fortnoxForm ? (
             <form action={fortnoxForm.action} method="GET" target="_top" onSubmit={handleConnectFortnox}>
               {fortnoxForm.params.map(([name, value]) => (
