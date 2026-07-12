@@ -43,7 +43,7 @@ import {
   updateThreshold,
 } from "@/lib/api/finance.functions";
 import { createShareLink } from "@/lib/api/share.functions";
-import { getFortnoxAuthUrl, getFortnoxStatus } from "@/lib/api/fortnox.functions";
+import { disconnectFortnox, getFortnoxAuthUrl, getFortnoxStatus, syncFortnox } from "@/lib/api/fortnox.functions";
 
 import logo from "@/assets/pejl-logo.png";
 
@@ -74,6 +74,7 @@ function DashboardPage() {
   const [demoStage, setDemoStage] = useState<null | "critical" | "resolved">(null);
   const [fortnoxConnected, setFortnoxConnected] = useState(false);
   const [fortnoxLoading, setFortnoxLoading] = useState(false);
+  const [fortnoxSyncing, setFortnoxSyncing] = useState(false);
   const [fortnoxAuthUrl, setFortnoxAuthUrl] = useState<string | null>(null);
   const fortnoxForm = useMemo(() => {
     if (!fortnoxAuthUrl) return null;
@@ -135,6 +136,34 @@ function DashboardPage() {
   const handleConnectFortnox = async () => {
     console.log("[Fortnox] Koppla-knapp klickad. redirectUri =", FORTNOX_REDIRECT_URI);
     console.log("[Fortnox] Skickar native form-submit till Fortnox i toppfliken.");
+  };
+
+  const syncFortnoxFn = useServerFn(syncFortnox);
+  const disconnectFortnoxFn = useServerFn(disconnectFortnox);
+
+  const handleSyncFortnox = async () => {
+    setFortnoxSyncing(true);
+    try {
+      const result = await syncFortnoxFn();
+      toast.success(`Synkat från Fortnox — ${result.imported} poster importerade.`);
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte synka Fortnox");
+    } finally {
+      setFortnoxSyncing(false);
+    }
+  };
+
+  const handleDisconnectFortnox = async () => {
+    if (!confirm("Koppla bort Fortnox och ta bort importerade fakturor?")) return;
+    try {
+      await disconnectFortnoxFn();
+      setFortnoxConnected(false);
+      toast.success("Fortnox bortkopplad.");
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte koppla bort Fortnox");
+    }
   };
 
   const generateSummaryFn = useServerFn(generateWeeklySummary);
@@ -373,9 +402,27 @@ function DashboardPage() {
 
         <div className="flex flex-wrap items-center gap-3 -mt-2">
           {fortnoxConnected ? (
-            <span className="inline-flex items-center gap-2 text-sm font-medium text-success bg-success/10 border border-success/30 rounded-full px-3 py-1.5">
-              <CheckCircle2 className="size-4" /> Fortnox ansluten
-            </span>
+            <>
+              <span className="inline-flex items-center gap-2 text-sm font-medium text-success bg-success/10 border border-success/30 rounded-full px-3 py-1.5">
+                <CheckCircle2 className="size-4" /> Fortnox ansluten
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSyncFortnox}
+                disabled={fortnoxSyncing}
+              >
+                {fortnoxSyncing ? "Synkar…" : "Synka Fortnox"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDisconnectFortnox}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                Koppla bort
+              </Button>
+            </>
           ) : fortnoxForm ? (
             <form action={fortnoxForm.action} method="GET" target="_top" onSubmit={handleConnectFortnox}>
               {fortnoxForm.params.map(([name, value]) => (

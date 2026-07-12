@@ -3,6 +3,54 @@ import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+async function syncFortnoxForUser(userId: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: conn, error: connErr } = await supabaseAdmin
+    .from("fortnox_connections")
+    .select("user_id, access_token, refresh_token, expires_at, scope")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (connErr) throw new Error(connErr.message);
+  if (!conn) throw new Error("Ingen Fortnox-koppling hittad för den här användaren.");
+
+  const { ensureFreshFortnoxToken, fetchFortnoxOpenTransactions } = await import(
+    "@/lib/fortnoxApi.server"
+  );
+  const accessToken = await ensureFreshFortnoxToken(conn);
+  const { companyName, transactions } = await fetchFortnoxOpenTransactions(accessToken);
+
+  // Ersätt alla tidigare Fortnox-hämtade rader med den färska uppsättningen.
+  const { error: delErr } = await supabaseAdmin
+    .from("transactions")
+    .delete()
+    .eq("user_id", userId)
+    .eq("source", "fortnox");
+  if (delErr) throw new Error(delErr.message);
+
+  if (transactions.length > 0) {
+    const rows = transactions.map((t) => ({
+      user_id: userId,
+      kind: t.kind,
+      amount: t.amount,
+      due_date: t.dueDate,
+      description: t.description,
+      paid: false,
+      source: "fortnox",
+    }));
+    const { error: insErr } = await supabaseAdmin.from("transactions").insert(rows);
+    if (insErr) throw new Error(insErr.message);
+  }
+
+  if (companyName) {
+    await supabaseAdmin
+      .from("profiles")
+      .update({ company_name: companyName, updated_at: new Date().toISOString() })
+      .eq("id", userId);
+  }
+
+  return { imported: transactions.length, companyName };
+}
+
 export const getFortnoxAuthUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { redirectUri?: string } | undefined) => input ?? {})
@@ -159,5 +207,39 @@ export const exchangeFortnoxCode = createServerFn({ method: "POST" })
       );
     if (upsertErr) throw new Error(upsertErr.message);
 
+    // Kör en initial synk direkt så användaren ser riktig Fortnox-data
+    // så snart hen kommer tillbaka till dashboarden.
+    let imported = 0;
+    try {
+      const result = await syncFortnoxForUser(statePayload.userId);
+      imported = result.imported;
+    } catch (err) {
+      console.error("[Fortnox] Initial synk efter OAuth misslyckades:", err);
+    }
+
+    return { ok: true, imported };
+  });
+
+export const syncFortnox = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    return syncFortnoxForUser(context.userId);
+  });
+
+export const disconnectFortnox = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Ta bort både kopplingen och Fortnox-hämtade transaktioner.
+    const [{ error: connErr }, { error: txErr }] = await Promise.all([
+      supabaseAdmin.from("fortnox_connections").delete().eq("user_id", context.userId),
+      supabaseAdmin
+        .from("transactions")
+        .delete()
+        .eq("user_id", context.userId)
+        .eq("source", "fortnox"),
+    ]);
+    if (connErr) throw new Error(connErr.message);
+    if (txErr) throw new Error(txErr.message);
     return { ok: true };
   });
