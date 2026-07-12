@@ -69,28 +69,76 @@ function AuthPage() {
     }
   };
 
+  function translateAuthError(err: unknown, currentMode: "signin" | "signup"): string {
+    const raw = err instanceof Error ? err.message : String(err ?? "");
+    const msg = raw.toLowerCase();
+    const code = (err as { code?: string } | null)?.code?.toLowerCase?.() ?? "";
+    if (code === "weak_password" || msg.includes("weak") || msg.includes("pwned")) {
+      return "Lösenordet är för svagt eller har läckt i en tidigare dataläcka. Välj ett annat lösenord med minst 8 tecken, gärna en blandning av bokstäver, siffror och tecken.";
+    }
+    if (msg.includes("password") && msg.includes("short")) {
+      return "Lösenordet måste vara minst 8 tecken.";
+    }
+    if (msg.includes("already registered") || msg.includes("user already") || code === "user_already_exists") {
+      return "Ett konto med den e-postadressen finns redan. Logga in istället.";
+    }
+    if (msg.includes("invalid login") || msg.includes("invalid credentials") || code === "invalid_credentials") {
+      return "Fel e-post eller lösenord.";
+    }
+    if (msg.includes("email not confirmed")) {
+      return "Bekräfta din e-post via länken vi skickade innan du loggar in.";
+    }
+    if (msg.includes("rate limit") || msg.includes("too many")) {
+      return "För många försök. Vänta en liten stund och försök igen.";
+    }
+    if (msg.includes("invalid email") || msg.includes("email address")) {
+      return "Ogiltig e-postadress.";
+    }
+    if (msg.includes("signups") && msg.includes("disabled")) {
+      return "Registrering är tillfälligt avstängt. Försök igen om en stund.";
+    }
+    return currentMode === "signup"
+      ? "Kunde inte skapa kontot. Kontrollera uppgifterna och försök igen."
+      : "Kunde inte logga in. Kontrollera uppgifterna och försök igen.";
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      toast.error("Fyll i e-postadress.");
+      return;
+    }
+    if (mode === "signup" && password.length < 8) {
+      toast.error("Lösenordet måste vara minst 8 tecken.");
+      return;
+    }
     setLoading(true);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email,
+        const { data, error } = await supabase.auth.signUp({
+          email: trimmedEmail,
           password,
           options: {
             emailRedirectTo: window.location.origin,
-            data: { company_name: company || "Mitt företag" },
+            data: { company_name: company.trim() || "Mitt företag" },
           },
         });
         if (error) throw error;
+        if (!data.session) {
+          toast.success("Konto skapat! Kolla din e-post för att bekräfta.");
+          setMode("signin");
+          return;
+        }
         toast.success("Konto skapat! Du loggas in.");
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ email: trimmedEmail, password });
         if (error) throw error;
       }
       navigate({ to: "/dashboard" });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Något gick fel");
+      console.error("[Auth]", err);
+      toast.error(translateAuthError(err, mode));
     } finally {
       setLoading(false);
     }
@@ -119,7 +167,20 @@ function AuthPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password">Lösenord</Label>
-              <Input id="password" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "signup" ? "new-password" : "current-password"} />
+              <Input
+                id="password"
+                type="password"
+                required
+                minLength={mode === "signup" ? 8 : 6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+              />
+              {mode === "signup" && (
+                <p className="text-[11px] text-muted-foreground">
+                  Minst 8 tecken. Undvik vanliga lösenord — vi blockerar lösenord som läckt tidigare.
+                </p>
+              )}
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Vänta..." : mode === "signup" ? "Skapa konto" : "Logga in"}
