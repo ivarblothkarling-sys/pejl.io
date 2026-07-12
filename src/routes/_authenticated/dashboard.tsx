@@ -107,13 +107,17 @@ function DashboardPage() {
   }, []);
 
   const handleConnectFortnox = async () => {
-    const redirectUri = `${window.location.origin}/auth/fortnox/callback`;
+    // Fortnox kräver en registrerad redirect_uri — använd alltid produktions-URL:en
+    // som är registrerad i Fortnox-appen, oavsett preview/lokal miljö.
+    const redirectUri = "https://pejl-cash-flow-buddy.lovable.app/auth/fortnox/callback";
     console.log("[Fortnox] Koppla-knapp klickad. redirectUri =", redirectUri);
     setFortnoxLoading(true);
     try {
       const { url } = await getFortnoxAuthUrl({ data: { redirectUri } });
       console.log("[Fortnox] OAuth-URL mottagen:", url);
-      window.location.href = url;
+      // Preview körs i iframe — navigera top-fönstret så Fortnox inte blockeras av frame-options.
+      const top = window.top ?? window;
+      top.location.href = url;
     } catch (err) {
       console.error("[Fortnox] Kunde inte starta OAuth:", err);
       toast.error(err instanceof Error ? err.message : "Kunde inte starta Fortnox-koppling");

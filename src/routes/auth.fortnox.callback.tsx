@@ -39,7 +39,7 @@ function FortnoxCallback() {
         if (err) throw new Error(err);
         if (!code) throw new Error("Ingen kod mottagen från Fortnox.");
         const state = url.searchParams.get("state") ?? undefined;
-        const redirectUri = `${window.location.origin}/auth/fortnox/callback`;
+        const redirectUri = "https://pejl-cash-flow-buddy.lovable.app/auth/fortnox/callback";
         await exchange({ data: { code, state, redirectUri } });
         setStatus("ok");
         setMessage("Fortnox är anslutet.");
