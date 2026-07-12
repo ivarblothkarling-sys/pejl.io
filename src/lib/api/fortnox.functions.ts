@@ -207,5 +207,39 @@ export const exchangeFortnoxCode = createServerFn({ method: "POST" })
       );
     if (upsertErr) throw new Error(upsertErr.message);
 
+    // Kör en initial synk direkt så användaren ser riktig Fortnox-data
+    // så snart hen kommer tillbaka till dashboarden.
+    let imported = 0;
+    try {
+      const result = await syncFortnoxForUser(statePayload.userId);
+      imported = result.imported;
+    } catch (err) {
+      console.error("[Fortnox] Initial synk efter OAuth misslyckades:", err);
+    }
+
+    return { ok: true, imported };
+  });
+
+export const syncFortnox = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    return syncFortnoxForUser(context.userId);
+  });
+
+export const disconnectFortnox = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Ta bort både kopplingen och Fortnox-hämtade transaktioner.
+    const [{ error: connErr }, { error: txErr }] = await Promise.all([
+      supabaseAdmin.from("fortnox_connections").delete().eq("user_id", context.userId),
+      supabaseAdmin
+        .from("transactions")
+        .delete()
+        .eq("user_id", context.userId)
+        .eq("source", "fortnox"),
+    ]);
+    if (connErr) throw new Error(connErr.message);
+    if (txErr) throw new Error(txErr.message);
     return { ok: true };
   });
