@@ -115,7 +115,9 @@ function DashboardPage() {
     try {
       const { url } = await getFortnoxAuthUrl({ data: { redirectUri } });
       console.log("[Fortnox] OAuth-URL mottagen:", url);
-      window.location.href = url;
+      // Preview körs i iframe — navigera top-fönstret så Fortnox inte blockeras av frame-options.
+      const top = window.top ?? window;
+      top.location.href = url;
     } catch (err) {
       console.error("[Fortnox] Kunde inte starta OAuth:", err);
       toast.error(err instanceof Error ? err.message : "Kunde inte starta Fortnox-koppling");
