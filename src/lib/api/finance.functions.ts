@@ -37,6 +37,36 @@ export const getDashboardData = createServerFn({ method: "GET" })
     );
     const suggestions = computeSuggestions(forecast, transactions);
 
+    // Fire-and-forget: skicka mejlvarning om saldot bryter gränsen (throttlat per breach-datum)
+    if (forecast.breachDate) {
+      const p = profile as { last_low_balance_alert_key?: string | null; company_name?: string | null };
+      const alertKey = `${forecast.breachDate}:${Math.round((forecast.breachAmount ?? 0))}`;
+      if (p.last_low_balance_alert_key !== alertKey) {
+        const email = context.claims?.email as string | undefined;
+        if (email) {
+          try {
+            const { sendLowBalanceEmail } = await import("@/lib/emailAlert.server");
+            const result = await sendLowBalanceEmail({
+              to: email,
+              companyName: p.company_name ?? "Ditt företag",
+              forecast,
+            });
+            if (result.ok) {
+              await supabase
+                .from("profiles")
+                .update({
+                  last_low_balance_alert_at: new Date().toISOString(),
+                  last_low_balance_alert_key: alertKey,
+                })
+                .eq("id", userId);
+            }
+          } catch (err) {
+            console.error("[finance] email alert failed", err);
+          }
+        }
+      }
+    }
+
     return { profile, transactions, forecast, suggestions };
   });
 

@@ -81,6 +81,9 @@ export type Database = {
           current_balance: number
           id: string
           language: string
+          last_low_balance_alert_at: string | null
+          last_low_balance_alert_key: string | null
+          onboarding_completed: boolean
           threshold: number
           updated_at: string
         }
@@ -93,6 +96,9 @@ export type Database = {
           current_balance?: number
           id: string
           language?: string
+          last_low_balance_alert_at?: string | null
+          last_low_balance_alert_key?: string | null
+          onboarding_completed?: boolean
           threshold?: number
           updated_at?: string
         }
@@ -105,6 +111,9 @@ export type Database = {
           current_balance?: number
           id?: string
           language?: string
+          last_low_balance_alert_at?: string | null
+          last_low_balance_alert_key?: string | null
+          onboarding_completed?: boolean
           threshold?: number
           updated_at?: string
         }
