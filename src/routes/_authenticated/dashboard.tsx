@@ -58,6 +58,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 type DashData = Awaited<ReturnType<typeof getDashboardData>>;
+const FORTNOX_REDIRECT_URI = "https://pejl-cash-flow-buddy.lovable.app/auth/fortnox/callback";
 
 function DashboardPage() {
   const navigate = useNavigate();
@@ -73,6 +74,7 @@ function DashboardPage() {
   const [demoStage, setDemoStage] = useState<null | "critical" | "resolved">(null);
   const [fortnoxConnected, setFortnoxConnected] = useState(false);
   const [fortnoxLoading, setFortnoxLoading] = useState(false);
+  const [fortnoxAuthUrl, setFortnoxAuthUrl] = useState<string | null>(null);
 
 
 
@@ -92,7 +94,23 @@ function DashboardPage() {
   useEffect(() => {
     refresh();
     getFortnoxStatus()
-      .then((s) => setFortnoxConnected(s.connected))
+      .then((s) => {
+        setFortnoxConnected(s.connected);
+        if (!s.connected) {
+          setFortnoxLoading(true);
+          console.log("[Fortnox] Förbereder OAuth-länk. redirectUri =", FORTNOX_REDIRECT_URI);
+          getFortnoxAuthUrl({ data: { redirectUri: FORTNOX_REDIRECT_URI } })
+            .then(({ url }) => {
+              console.log("[Fortnox] OAuth-URL förberedd:", url);
+              setFortnoxAuthUrl(url);
+            })
+            .catch((err) => {
+              console.error("[Fortnox] Kunde inte förbereda OAuth-URL:", err);
+              toast.error(err instanceof Error ? err.message : "Kunde inte förbereda Fortnox-koppling");
+            })
+            .finally(() => setFortnoxLoading(false));
+        }
+      })
       .catch(() => {});
     // Show success toast if we just came back from the OAuth callback
     try {
@@ -107,22 +125,8 @@ function DashboardPage() {
   }, []);
 
   const handleConnectFortnox = async () => {
-    // Fortnox kräver en registrerad redirect_uri — använd alltid produktions-URL:en
-    // som är registrerad i Fortnox-appen, oavsett preview/lokal miljö.
-    const redirectUri = "https://pejl-cash-flow-buddy.lovable.app/auth/fortnox/callback";
-    console.log("[Fortnox] Koppla-knapp klickad. redirectUri =", redirectUri);
-    setFortnoxLoading(true);
-    try {
-      const { url } = await getFortnoxAuthUrl({ data: { redirectUri } });
-      console.log("[Fortnox] OAuth-URL mottagen:", url);
-      // Preview körs i iframe — navigera top-fönstret så Fortnox inte blockeras av frame-options.
-      const top = window.top ?? window;
-      top.location.href = url;
-    } catch (err) {
-      console.error("[Fortnox] Kunde inte starta OAuth:", err);
-      toast.error(err instanceof Error ? err.message : "Kunde inte starta Fortnox-koppling");
-      setFortnoxLoading(false);
-    }
+    console.log("[Fortnox] Koppla-knapp klickad. redirectUri =", FORTNOX_REDIRECT_URI);
+    console.log("[Fortnox] Navigerar via vanlig länk i toppfliken:", fortnoxAuthUrl);
   };
 
   const generateSummaryFn = useServerFn(generateWeeklySummary);
@@ -366,13 +370,23 @@ function DashboardPage() {
             </span>
           ) : (
             <Button
+              asChild={!!fortnoxAuthUrl}
               variant="default"
               size="sm"
               onClick={handleConnectFortnox}
-              disabled={fortnoxLoading}
+              disabled={fortnoxLoading || !fortnoxAuthUrl}
             >
-              <Link2 className="size-4" />
-              {fortnoxLoading ? "Öppnar Fortnox…" : "Koppla Fortnox"}
+              {fortnoxAuthUrl ? (
+                <a href={fortnoxAuthUrl} target="_top">
+                  <Link2 className="size-4" />
+                  Koppla Fortnox
+                </a>
+              ) : (
+                <>
+                  <Link2 className="size-4" />
+                  {fortnoxLoading ? "Förbereder Fortnox…" : "Koppla Fortnox"}
+                </>
+              )}
             </Button>
           )}
           <Button

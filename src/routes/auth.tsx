@@ -9,6 +9,8 @@ import { Link2 } from "lucide-react";
 import { getFortnoxAuthUrl } from "@/lib/api/fortnox.functions";
 import logo from "@/assets/pejl-logo.png";
 
+const FORTNOX_REDIRECT_URI = "https://pejl-cash-flow-buddy.lovable.app/auth/fortnox/callback";
+
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
@@ -26,12 +28,32 @@ function AuthPage() {
   const [password, setPassword] = useState("");
   const [company, setCompany] = useState("");
   const [loading, setLoading] = useState(false);
+  const [fortnoxAuthUrl, setFortnoxAuthUrl] = useState<string | null>(null);
+  const [fortnoxLoading, setFortnoxLoading] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) navigate({ to: "/dashboard" });
     });
   }, [navigate]);
+
+  const prepareFortnoxAuthUrl = async () => {
+    if (fortnoxAuthUrl || fortnoxLoading) return;
+    setFortnoxLoading(true);
+    console.log("[Fortnox] Förbereder OAuth-länk (auth). redirectUri =", FORTNOX_REDIRECT_URI);
+    try {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) return;
+      const { url } = await getFortnoxAuthUrl({ data: { redirectUri: FORTNOX_REDIRECT_URI } });
+      console.log("[Fortnox] OAuth-URL förberedd (auth):", url);
+      setFortnoxAuthUrl(url);
+    } catch (err) {
+      console.error("[Fortnox] Kunde inte förbereda OAuth på auth-sidan:", err);
+      toast.error(err instanceof Error ? err.message : "Kunde inte förbereda Fortnox-koppling");
+    } finally {
+      setFortnoxLoading(false);
+    }
+  };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -92,30 +114,37 @@ function AuthPage() {
 
           <div className="mt-4 pt-4 border-t border-border">
             <Button
+              asChild={!!fortnoxAuthUrl}
               type="button"
               variant="outline"
               className="w-full"
+              onMouseEnter={prepareFortnoxAuthUrl}
+              onFocus={prepareFortnoxAuthUrl}
               onClick={async () => {
-                const redirectUri = "https://pejl-cash-flow-buddy.lovable.app/auth/fortnox/callback";
-                console.log("[Fortnox] Koppla-knapp (auth) klickad. redirectUri =", redirectUri);
+                console.log("[Fortnox] Koppla-knapp (auth) klickad. redirectUri =", FORTNOX_REDIRECT_URI);
                 try {
                   const { data } = await supabase.auth.getUser();
                   if (!data.user) {
                     toast.error("Logga in först för att koppla Fortnox.");
                     return;
                   }
-                  const { url } = await getFortnoxAuthUrl({ data: { redirectUri } });
-                  console.log("[Fortnox] OAuth-URL mottagen:", url);
-                  // Preview körs i iframe — navigera top-fönstret så Fortnox inte blockeras.
-                  const top = window.top ?? window;
-                  top.location.href = url;
+                  if (!fortnoxAuthUrl) await prepareFortnoxAuthUrl();
                 } catch (err) {
                   console.error("[Fortnox] Kunde inte starta OAuth:", err);
                   toast.error(err instanceof Error ? err.message : "Kunde inte starta Fortnox-koppling");
                 }
               }}
+              disabled={fortnoxLoading}
             >
-              <Link2 className="size-4" /> Koppla Fortnox
+              {fortnoxAuthUrl ? (
+                <a href={fortnoxAuthUrl} target="_top">
+                  <Link2 className="size-4" /> Koppla Fortnox
+                </a>
+              ) : (
+                <>
+                  <Link2 className="size-4" /> {fortnoxLoading ? "Förbereder Fortnox…" : "Koppla Fortnox"}
+                </>
+              )}
             </Button>
             <p className="text-[11px] text-center text-muted-foreground mt-2">
               Kräver inloggning — logga in eller skapa konto först.
