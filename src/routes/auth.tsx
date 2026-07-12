@@ -96,7 +96,7 @@ function AuthPage() {
               variant="outline"
               className="w-full"
               onClick={async () => {
-                const redirectUri = `${window.location.origin}/auth/fortnox/callback`;
+                const redirectUri = "https://pejl-cash-flow-buddy.lovable.app/auth/fortnox/callback";
                 console.log("[Fortnox] Koppla-knapp (auth) klickad. redirectUri =", redirectUri);
                 try {
                   const { data } = await supabase.auth.getUser();
@@ -106,7 +106,9 @@ function AuthPage() {
                   }
                   const { url } = await getFortnoxAuthUrl({ data: { redirectUri } });
                   console.log("[Fortnox] OAuth-URL mottagen:", url);
-                  window.location.href = url;
+                  // Preview körs i iframe — navigera top-fönstret så Fortnox inte blockeras.
+                  const top = window.top ?? window;
+                  top.location.href = url;
                 } catch (err) {
                   console.error("[Fortnox] Kunde inte starta OAuth:", err);
                   toast.error(err instanceof Error ? err.message : "Kunde inte starta Fortnox-koppling");
