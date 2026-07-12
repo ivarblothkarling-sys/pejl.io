@@ -107,7 +107,9 @@ function DashboardPage() {
   }, []);
 
   const handleConnectFortnox = async () => {
-    const redirectUri = `${window.location.origin}/auth/fortnox/callback`;
+    // Fortnox kräver en registrerad redirect_uri — använd alltid produktions-URL:en
+    // som är registrerad i Fortnox-appen, oavsett preview/lokal miljö.
+    const redirectUri = "https://pejl-cash-flow-buddy.lovable.app/auth/fortnox/callback";
     console.log("[Fortnox] Koppla-knapp klickad. redirectUri =", redirectUri);
     setFortnoxLoading(true);
     try {
