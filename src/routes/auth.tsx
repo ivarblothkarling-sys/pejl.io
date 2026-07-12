@@ -167,7 +167,20 @@ function AuthPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password">Lösenord</Label>
-              <Input id="password" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "signup" ? "new-password" : "current-password"} />
+              <Input
+                id="password"
+                type="password"
+                required
+                minLength={mode === "signup" ? 8 : 6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+              />
+              {mode === "signup" && (
+                <p className="text-[11px] text-muted-foreground">
+                  Minst 8 tecken. Undvik vanliga lösenord — vi blockerar lösenord som läckt tidigare.
+                </p>
+              )}
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Vänta..." : mode === "signup" ? "Skapa konto" : "Logga in"}
