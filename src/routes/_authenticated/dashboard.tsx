@@ -138,6 +138,34 @@ function DashboardPage() {
     console.log("[Fortnox] Skickar native form-submit till Fortnox i toppfliken.");
   };
 
+  const syncFortnoxFn = useServerFn(syncFortnox);
+  const disconnectFortnoxFn = useServerFn(disconnectFortnox);
+
+  const handleSyncFortnox = async () => {
+    setFortnoxSyncing(true);
+    try {
+      const result = await syncFortnoxFn();
+      toast.success(`Synkat från Fortnox — ${result.imported} poster importerade.`);
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte synka Fortnox");
+    } finally {
+      setFortnoxSyncing(false);
+    }
+  };
+
+  const handleDisconnectFortnox = async () => {
+    if (!confirm("Koppla bort Fortnox och ta bort importerade fakturor?")) return;
+    try {
+      await disconnectFortnoxFn();
+      setFortnoxConnected(false);
+      toast.success("Fortnox bortkopplad.");
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte koppla bort Fortnox");
+    }
+  };
+
   const generateSummaryFn = useServerFn(generateWeeklySummary);
   const handleWeeklySummary = async () => {
     setSummaryLoading(true);
