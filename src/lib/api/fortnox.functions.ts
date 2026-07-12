@@ -25,9 +25,10 @@ function getRedirectUri(override?: string): string {
 export const getFortnoxAuthUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { redirectUri?: string } | undefined) => input ?? {})
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     // Läs server-side env (aldrig import.meta.env för secrets).
     const clientId = process.env.FORTNOX_CLIENT_ID;
+    const clientSecret = process.env.FORTNOX_CLIENT_SECRET;
     console.log(
       "[Fortnox] getFortnoxAuthUrl — FORTNOX_CLIENT_ID present:",
       !!clientId,
@@ -44,18 +45,26 @@ export const getFortnoxAuthUrl = createServerFn({ method: "POST" })
         "Fortnox är inte konfigurerad — FORTNOX_CLIENT_ID saknas i miljövariablerna.",
       );
     }
+    if (!clientSecret) {
+      console.error("[Fortnox] FORTNOX_CLIENT_SECRET saknas i process.env.");
+      throw new Error(
+        "Fortnox är inte konfigurerad — FORTNOX_CLIENT_SECRET saknas i miljövariablerna.",
+      );
+    }
+    const { createFortnoxState } = await import("@/lib/fortnoxState.server");
+    const state = createFortnoxState(context.userId, clientSecret);
     const redirectUri = getRedirectUri(data?.redirectUri);
     console.log("[Fortnox] Bygger OAuth-URL med redirectUri:", redirectUri);
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
       scope: FORTNOX_SCOPES,
-      state: "pejl",
+      state,
       response_type: "code",
       access_type: "offline",
     });
     const url = `${FORTNOX_AUTH_URL}?${params.toString()}`;
-    console.log("[Fortnox] OAuth-URL genererad:", url);
+    console.log("[Fortnox] OAuth-URL genererad för Fortnox.");
     return { url, redirectUri };
   });
 
@@ -76,15 +85,14 @@ export const getFortnoxStatus = createServerFn({ method: "GET" })
   });
 
 export const exchangeFortnoxCode = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator(
     z.object({
       code: z.string().min(1),
-      state: z.string().optional(),
+      state: z.string().min(1),
       redirectUri: z.string().url().optional(),
     }),
   )
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data }) => {
     const clientId = process.env.FORTNOX_CLIENT_ID;
     const clientSecret = process.env.FORTNOX_CLIENT_SECRET;
     if (!clientId || !clientSecret) {
@@ -92,6 +100,9 @@ export const exchangeFortnoxCode = createServerFn({ method: "POST" })
         "Fortnox är inte konfigurerad — kontrollera FORTNOX_CLIENT_ID och FORTNOX_CLIENT_SECRET.",
       );
     }
+
+    const { verifyFortnoxState } = await import("@/lib/fortnoxState.server");
+    const statePayload = verifyFortnoxState(data.state, clientSecret);
 
     const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
     const body = new URLSearchParams({
@@ -126,11 +137,12 @@ export const exchangeFortnoxCode = createServerFn({ method: "POST" })
       ? new Date(Date.now() + json.expires_in * 1000).toISOString()
       : null;
 
-    const { error: upsertErr } = await context.supabase
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: upsertErr } = await supabaseAdmin
       .from("fortnox_connections")
       .upsert(
         {
-          user_id: context.userId,
+          user_id: statePayload.userId,
           access_token: json.access_token,
           refresh_token: json.refresh_token,
           expires_at: expiresAt,

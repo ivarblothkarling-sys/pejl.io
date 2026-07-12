@@ -30,6 +30,15 @@ function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [fortnoxAuthUrl, setFortnoxAuthUrl] = useState<string | null>(null);
   const [fortnoxLoading, setFortnoxLoading] = useState(false);
+  const fortnoxForm = fortnoxAuthUrl
+    ? (() => {
+        const url = new URL(fortnoxAuthUrl);
+        return {
+          action: `${url.origin}${url.pathname}`,
+          params: Array.from(url.searchParams.entries()),
+        };
+      })()
+    : null;
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -113,39 +122,48 @@ function AuthPage() {
           </form>
 
           <div className="mt-4 pt-4 border-t border-border">
-            <Button
-              asChild={!!fortnoxAuthUrl}
-              type="button"
-              variant="outline"
-              className="w-full"
-              onMouseEnter={prepareFortnoxAuthUrl}
-              onFocus={prepareFortnoxAuthUrl}
-              onClick={async () => {
-                console.log("[Fortnox] Koppla-knapp (auth) klickad. redirectUri =", FORTNOX_REDIRECT_URI);
-                try {
-                  const { data } = await supabase.auth.getUser();
-                  if (!data.user) {
-                    toast.error("Logga in först för att koppla Fortnox.");
-                    return;
-                  }
-                  if (!fortnoxAuthUrl) await prepareFortnoxAuthUrl();
-                } catch (err) {
-                  console.error("[Fortnox] Kunde inte starta OAuth:", err);
-                  toast.error(err instanceof Error ? err.message : "Kunde inte starta Fortnox-koppling");
-                }
-              }}
-              disabled={fortnoxLoading}
-            >
-              {fortnoxAuthUrl ? (
-                <a href={fortnoxAuthUrl} target="_top">
+            {fortnoxForm ? (
+              <form
+                action={fortnoxForm.action}
+                method="GET"
+                target="_top"
+                onSubmit={() => {
+                  console.log("[Fortnox] Koppla-knapp (auth) klickad. Native form-submit till Fortnox.");
+                }}
+              >
+                {fortnoxForm.params.map(([name, value]) => (
+                  <input key={name} type="hidden" name={name} value={value} />
+                ))}
+                <Button type="submit" variant="outline" className="w-full">
                   <Link2 className="size-4" /> Koppla Fortnox
-                </a>
-              ) : (
-                <>
-                  <Link2 className="size-4" /> {fortnoxLoading ? "Förbereder Fortnox…" : "Koppla Fortnox"}
-                </>
-              )}
-            </Button>
+                </Button>
+              </form>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onMouseEnter={prepareFortnoxAuthUrl}
+                onFocus={prepareFortnoxAuthUrl}
+                onClick={async () => {
+                  console.log("[Fortnox] Koppla-knapp (auth) klickad. redirectUri =", FORTNOX_REDIRECT_URI);
+                  try {
+                    const { data } = await supabase.auth.getUser();
+                    if (!data.user) {
+                      toast.error("Logga in först för att koppla Fortnox.");
+                      return;
+                    }
+                    await prepareFortnoxAuthUrl();
+                  } catch (err) {
+                    console.error("[Fortnox] Kunde inte starta OAuth:", err);
+                    toast.error(err instanceof Error ? err.message : "Kunde inte starta Fortnox-koppling");
+                  }
+                }}
+                disabled={fortnoxLoading}
+              >
+                <Link2 className="size-4" /> {fortnoxLoading ? "Förbereder Fortnox…" : "Koppla Fortnox"}
+              </Button>
+            )}
             <p className="text-[11px] text-center text-muted-foreground mt-2">
               Kräver inloggning — logga in eller skapa konto först.
             </p>

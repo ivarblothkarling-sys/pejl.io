@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 
-import { supabase } from "@/integrations/supabase/client";
 import { exchangeFortnoxCode } from "@/lib/api/fortnox.functions";
 import { Button } from "@/components/ui/button";
 
@@ -28,17 +27,13 @@ function FortnoxCallback() {
 
     (async () => {
       try {
-        const { data: userData } = await supabase.auth.getUser();
-        if (!userData.user) {
-          navigate({ to: "/auth" });
-          return;
-        }
         const url = new URL(window.location.href);
         const code = url.searchParams.get("code");
         const err = url.searchParams.get("error");
         if (err) throw new Error(err);
         if (!code) throw new Error("Ingen kod mottagen från Fortnox.");
-        const state = url.searchParams.get("state") ?? undefined;
+        const state = url.searchParams.get("state");
+        if (!state) throw new Error("Säkerhetskontrollen från Fortnox saknas. Starta kopplingen igen.");
         const redirectUri = "https://pejl-cash-flow-buddy.lovable.app/auth/fortnox/callback";
         await exchange({ data: { code, state, redirectUri } });
         setStatus("ok");
