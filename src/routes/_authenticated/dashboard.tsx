@@ -75,6 +75,14 @@ function DashboardPage() {
   const [fortnoxConnected, setFortnoxConnected] = useState(false);
   const [fortnoxLoading, setFortnoxLoading] = useState(false);
   const [fortnoxAuthUrl, setFortnoxAuthUrl] = useState<string | null>(null);
+  const fortnoxForm = useMemo(() => {
+    if (!fortnoxAuthUrl) return null;
+    const url = new URL(fortnoxAuthUrl);
+    return {
+      action: `${url.origin}${url.pathname}`,
+      params: Array.from(url.searchParams.entries()),
+    };
+  }, [fortnoxAuthUrl]);
 
 
 
@@ -126,7 +134,7 @@ function DashboardPage() {
 
   const handleConnectFortnox = async () => {
     console.log("[Fortnox] Koppla-knapp klickad. redirectUri =", FORTNOX_REDIRECT_URI);
-    console.log("[Fortnox] Navigerar via vanlig länk i toppfliken:", fortnoxAuthUrl);
+    console.log("[Fortnox] Skickar native form-submit till Fortnox i toppfliken.");
   };
 
   const generateSummaryFn = useServerFn(generateWeeklySummary);
@@ -368,25 +376,20 @@ function DashboardPage() {
             <span className="inline-flex items-center gap-2 text-sm font-medium text-success bg-success/10 border border-success/30 rounded-full px-3 py-1.5">
               <CheckCircle2 className="size-4" /> Fortnox ansluten
             </span>
+          ) : fortnoxForm ? (
+            <form action={fortnoxForm.action} method="GET" target="_top" onSubmit={handleConnectFortnox}>
+              {fortnoxForm.params.map(([name, value]) => (
+                <input key={name} type="hidden" name={name} value={value} />
+              ))}
+              <Button type="submit" variant="default" size="sm">
+                <Link2 className="size-4" />
+                Koppla Fortnox
+              </Button>
+            </form>
           ) : (
-            <Button
-              asChild={!!fortnoxAuthUrl}
-              variant="default"
-              size="sm"
-              onClick={handleConnectFortnox}
-              disabled={fortnoxLoading || !fortnoxAuthUrl}
-            >
-              {fortnoxAuthUrl ? (
-                <a href={fortnoxAuthUrl} target="_top">
-                  <Link2 className="size-4" />
-                  Koppla Fortnox
-                </a>
-              ) : (
-                <>
-                  <Link2 className="size-4" />
-                  {fortnoxLoading ? "Förbereder Fortnox…" : "Koppla Fortnox"}
-                </>
-              )}
+            <Button variant="default" size="sm" disabled>
+              <Link2 className="size-4" />
+              {fortnoxLoading ? "Förbereder Fortnox…" : "Koppla Fortnox"}
             </Button>
           )}
           <Button
