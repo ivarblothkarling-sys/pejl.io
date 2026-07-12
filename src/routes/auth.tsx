@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,8 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const isNestedAuthRoute = pathname !== "/auth";
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -41,10 +43,13 @@ function AuthPage() {
     : null;
 
   useEffect(() => {
+    if (isNestedAuthRoute) return;
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) navigate({ to: "/dashboard" });
     });
-  }, [navigate]);
+  }, [navigate, isNestedAuthRoute]);
+
+  if (isNestedAuthRoute) return <Outlet />;
 
   const prepareFortnoxAuthUrl = async () => {
     if (fortnoxAuthUrl || fortnoxLoading) return;
