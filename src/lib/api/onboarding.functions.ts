@@ -22,7 +22,12 @@ export const completeOnboarding = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ threshold: z.number().min(0), companyName: z.string().optional() }))
   .handler(async ({ data, context }) => {
-    const update: Record<string, unknown> = {
+    const update: {
+      onboarding_completed: boolean;
+      threshold: number;
+      updated_at: string;
+      company_name?: string;
+    } = {
       onboarding_completed: true,
       threshold: data.threshold,
       updated_at: new Date().toISOString(),
