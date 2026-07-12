@@ -3,19 +3,18 @@ import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const FORTNOX_SCOPES = [
-  "companyinformation",
-  "invoice",
-  "supplierinvoice",
-  "bookkeeping",
-  "payment",
-  "customer",
-].join(" ");
-
 export const getFortnoxAuthUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { redirectUri?: string } | undefined) => input ?? {})
   .handler(async ({ data, context }) => {
+    const fortnoxScopes = [
+      "companyinformation",
+      "invoice",
+      "supplierinvoice",
+      "bookkeeping",
+      "payment",
+      "customer",
+    ].join(" ");
     // Läs server-side env (aldrig import.meta.env för secrets).
     const clientId = process.env.FORTNOX_CLIENT_ID;
     const clientSecret = process.env.FORTNOX_CLIENT_SECRET;
@@ -52,7 +51,7 @@ export const getFortnoxAuthUrl = createServerFn({ method: "POST" })
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
-      scope: FORTNOX_SCOPES,
+      scope: fortnoxScopes,
       state,
       response_type: "code",
       access_type: "offline",
@@ -87,6 +86,14 @@ export const exchangeFortnoxCode = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    const fortnoxScopes = [
+      "companyinformation",
+      "invoice",
+      "supplierinvoice",
+      "bookkeeping",
+      "payment",
+      "customer",
+    ].join(" ");
     const clientId = process.env.FORTNOX_CLIENT_ID;
     const clientSecret = process.env.FORTNOX_CLIENT_SECRET;
     if (!clientId || !clientSecret) {
@@ -145,7 +152,7 @@ export const exchangeFortnoxCode = createServerFn({ method: "POST" })
           access_token: json.access_token,
           refresh_token: json.refresh_token,
           expires_at: expiresAt,
-          scope: json.scope ?? FORTNOX_SCOPES,
+          scope: json.scope ?? fortnoxScopes,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "user_id" },
