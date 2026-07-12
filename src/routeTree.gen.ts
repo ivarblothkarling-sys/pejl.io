@@ -15,6 +15,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedInstallningarRouteImport } from './routes/_authenticated/installningar'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthFortnoxCallbackRouteImport } from './routes/auth.fortnox.callback'
@@ -48,6 +49,11 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedInstallningarRoute =
   AuthenticatedInstallningarRouteImport.update({
     id: '/installningar',
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   '/integritetspolicy': typeof IntegritetspolicyRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/installningar': typeof AuthenticatedInstallningarRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/api/chat': typeof ApiChatRoute
   '/share/$token': typeof ShareTokenRoute
   '/auth/fortnox/callback': typeof AuthFortnoxCallbackRoute
@@ -81,6 +88,7 @@ export interface FileRoutesByTo {
   '/integritetspolicy': typeof IntegritetspolicyRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/installningar': typeof AuthenticatedInstallningarRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/api/chat': typeof ApiChatRoute
   '/share/$token': typeof ShareTokenRoute
   '/auth/fortnox/callback': typeof AuthFortnoxCallbackRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/integritetspolicy': typeof IntegritetspolicyRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/installningar': typeof AuthenticatedInstallningarRoute
+  '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/api/chat': typeof ApiChatRoute
   '/share/$token': typeof ShareTokenRoute
   '/auth/fortnox/callback': typeof AuthFortnoxCallbackRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/integritetspolicy'
     | '/dashboard'
     | '/installningar'
+    | '/onboarding'
     | '/api/chat'
     | '/share/$token'
     | '/auth/fortnox/callback'
@@ -115,6 +125,7 @@ export interface FileRouteTypes {
     | '/integritetspolicy'
     | '/dashboard'
     | '/installningar'
+    | '/onboarding'
     | '/api/chat'
     | '/share/$token'
     | '/auth/fortnox/callback'
@@ -126,6 +137,7 @@ export interface FileRouteTypes {
     | '/integritetspolicy'
     | '/_authenticated/dashboard'
     | '/_authenticated/installningar'
+    | '/_authenticated/onboarding'
     | '/api/chat'
     | '/share/$token'
     | '/auth/fortnox/callback'
@@ -184,6 +196,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/onboarding': {
+      id: '/_authenticated/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/installningar': {
       id: '/_authenticated/installningar'
       path: '/installningar'
@@ -211,11 +230,13 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedInstallningarRoute: typeof AuthenticatedInstallningarRoute
+  AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedInstallningarRoute: AuthenticatedInstallningarRoute,
+  AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

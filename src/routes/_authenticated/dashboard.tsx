@@ -91,6 +91,12 @@ function DashboardPage() {
   const refresh = async () => {
     try {
       const result = await getDashboardData();
+      // Redirect till onboarding om användaren inte har gått igenom flödet
+      const p = result.profile as { onboarding_completed?: boolean };
+      if (p.onboarding_completed === false) {
+        navigate({ to: "/onboarding" });
+        return;
+      }
       setData(result);
       setThresholdInput(String(result.profile.threshold));
     } catch (err) {
