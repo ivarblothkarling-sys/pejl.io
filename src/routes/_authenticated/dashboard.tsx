@@ -74,6 +74,7 @@ function DashboardPage() {
   const [demoStage, setDemoStage] = useState<null | "critical" | "resolved">(null);
   const [fortnoxConnected, setFortnoxConnected] = useState(false);
   const [fortnoxLoading, setFortnoxLoading] = useState(false);
+  const [fortnoxSyncing, setFortnoxSyncing] = useState(false);
   const [fortnoxAuthUrl, setFortnoxAuthUrl] = useState<string | null>(null);
   const fortnoxForm = useMemo(() => {
     if (!fortnoxAuthUrl) return null;
