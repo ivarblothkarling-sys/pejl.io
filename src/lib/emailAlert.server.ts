@@ -1,0 +1,81 @@
+// Server-only helper: send low-balance alert emails via Resend gateway.
+import { formatSEK } from "./forecast";
+import type { ForecastResult } from "./forecast";
+
+const GATEWAY_URL = "https://connector-gateway.lovable.dev/resend";
+const FROM = "Pejl <alerts@pejl.io>";
+
+export type LowBalanceEmailInput = {
+  to: string;
+  companyName: string;
+  forecast: ForecastResult;
+};
+
+export async function sendLowBalanceEmail({ to, companyName, forecast }: LowBalanceEmailInput) {
+  const lovableKey = process.env.LOVABLE_API_KEY;
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!lovableKey || !resendKey) {
+    console.error("[emailAlert] Missing LOVABLE_API_KEY or RESEND_API_KEY");
+    return { ok: false as const, error: "missing_keys" };
+  }
+  if (!forecast.breachDate || forecast.breachAmount === null) {
+    return { ok: false as const, error: "no_breach" };
+  }
+
+  const dateSv = new Date(forecast.breachDate).toLocaleDateString("sv-SE", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const belopp = formatSEK(forecast.breachAmount);
+  const grans = formatSEK(forecast.threshold);
+  const minSaldo = formatSEK(forecast.minBalance);
+
+  const subject = `Varning: ${companyName} riskerar gå under likviditetsgränsen ${dateSv}`;
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a">
+      <h1 style="font-size:20px;margin:0 0 16px">⚠️ Likviditetsvarning från Pejl</h1>
+      <p style="font-size:15px;line-height:1.5;margin:0 0 16px">
+        Hej! Prognosen för <strong>${companyName}</strong> visar att ditt saldo riskerar att gå under din varningsgräns.
+      </p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
+        <tr><td style="padding:8px 0;color:#64748b">Datum</td><td style="padding:8px 0;text-align:right"><strong>${dateSv}</strong></td></tr>
+        <tr><td style="padding:8px 0;color:#64748b">Prognostiserat saldo</td><td style="padding:8px 0;text-align:right;color:#dc2626"><strong>${belopp}</strong></td></tr>
+        <tr><td style="padding:8px 0;color:#64748b">Din varningsgräns</td><td style="padding:8px 0;text-align:right"><strong>${grans}</strong></td></tr>
+        <tr><td style="padding:8px 0;color:#64748b">Lägsta saldo kommande 30 dagar</td><td style="padding:8px 0;text-align:right"><strong>${minSaldo}</strong></td></tr>
+      </table>
+      <p style="font-size:14px;line-height:1.5;color:#475569;margin:16px 0">
+        <strong>Orsak:</strong> Utgifterna fram till förfallodatum överstiger inkommande betalningar och nuvarande saldo. Titta på förslagen i Pejl för att skjuta upp leverantörsbetalningar eller påminna kunder om obetalda fakturor.
+      </p>
+      <a href="https://pejl-cash-flow-buddy.lovable.app/dashboard"
+         style="display:inline-block;background:#0f172a;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">
+        Öppna Pejl →
+      </a>
+      <p style="font-size:12px;color:#94a3b8;margin-top:32px">
+        Du får detta mejl eftersom du har aktiverat likviditetsvarningar i Pejl.
+      </p>
+    </div>
+  `;
+
+  try {
+    const res = await fetch(`${GATEWAY_URL}/emails`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${lovableKey}`,
+        "X-Connection-Api-Key": resendKey,
+      },
+      body: JSON.stringify({ from: FROM, to: [to], subject, html }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[emailAlert] Resend gateway ${res.status}: ${body}`);
+      return { ok: false as const, error: `gateway_${res.status}` };
+    }
+    return { ok: true as const };
+  } catch (err) {
+    console.error("[emailAlert] fetch failed", err);
+    return { ok: false as const, error: "fetch_failed" };
+  }
+}
