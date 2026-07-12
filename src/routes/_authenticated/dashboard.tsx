@@ -43,7 +43,7 @@ import {
   updateThreshold,
 } from "@/lib/api/finance.functions";
 import { createShareLink } from "@/lib/api/share.functions";
-import { getFortnoxAuthUrl, getFortnoxStatus } from "@/lib/api/fortnox.functions";
+import { disconnectFortnox, getFortnoxAuthUrl, getFortnoxStatus, syncFortnox } from "@/lib/api/fortnox.functions";
 
 import logo from "@/assets/pejl-logo.png";
 
