@@ -3,8 +3,6 @@ import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const FORTNOX_AUTH_URL = "https://apps.fortnox.se/oauth-v1/auth";
-const FORTNOX_TOKEN_URL = "https://apps.fortnox.se/oauth-v1/token";
 const FORTNOX_SCOPES = [
   "companyinformation",
   "invoice",
@@ -13,14 +11,6 @@ const FORTNOX_SCOPES = [
   "payment",
   "customer",
 ].join(" ");
-
-function getRedirectUri(override?: string): string {
-  if (override && /^https?:\/\//.test(override)) return override;
-  return (
-    process.env.FORTNOX_REDIRECT_URI ??
-    "http://localhost:8080/auth/fortnox/callback"
-  );
-}
 
 export const getFortnoxAuthUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -53,7 +43,11 @@ export const getFortnoxAuthUrl = createServerFn({ method: "POST" })
     }
     const { createFortnoxState } = await import("@/lib/fortnoxState.server");
     const state = createFortnoxState(context.userId, clientSecret);
-    const redirectUri = getRedirectUri(data?.redirectUri);
+    const redirectUri =
+      data?.redirectUri && /^https?:\/\//.test(data.redirectUri)
+        ? data.redirectUri
+        : (process.env.FORTNOX_REDIRECT_URI ??
+          "http://localhost:8080/auth/fortnox/callback");
     console.log("[Fortnox] Bygger OAuth-URL med redirectUri:", redirectUri);
     const params = new URLSearchParams({
       client_id: clientId,
@@ -63,7 +57,7 @@ export const getFortnoxAuthUrl = createServerFn({ method: "POST" })
       response_type: "code",
       access_type: "offline",
     });
-    const url = `${FORTNOX_AUTH_URL}?${params.toString()}`;
+    const url = `https://apps.fortnox.se/oauth-v1/auth?${params.toString()}`;
     console.log("[Fortnox] OAuth-URL genererad för Fortnox.");
     return { url, redirectUri };
   });
@@ -105,13 +99,18 @@ export const exchangeFortnoxCode = createServerFn({ method: "POST" })
     const statePayload = verifyFortnoxState(data.state, clientSecret);
 
     const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+    const redirectUri =
+      data.redirectUri && /^https?:\/\//.test(data.redirectUri)
+        ? data.redirectUri
+        : (process.env.FORTNOX_REDIRECT_URI ??
+          "http://localhost:8080/auth/fortnox/callback");
     const body = new URLSearchParams({
       grant_type: "authorization_code",
       code: data.code,
-      redirect_uri: getRedirectUri(data.redirectUri),
+      redirect_uri: redirectUri,
     });
 
-    const res = await fetch(FORTNOX_TOKEN_URL, {
+    const res = await fetch("https://apps.fortnox.se/oauth-v1/token", {
       method: "POST",
       headers: {
         Authorization: `Basic ${basic}`,
