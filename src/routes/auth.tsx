@@ -9,7 +9,10 @@ import { Link2 } from "lucide-react";
 import { getFortnoxAuthUrl } from "@/lib/api/fortnox.functions";
 import logo from "@/assets/pejl-logo.png";
 
-const FORTNOX_REDIRECT_URI = "https://pejl.io/auth/fortnox/callback";
+const getFortnoxRedirectUri = () =>
+  typeof window !== "undefined"
+    ? `${window.location.origin}/auth/fortnox/callback`
+    : "https://pejl.io/auth/fortnox/callback";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
