@@ -11,7 +11,7 @@ import { completeOnboarding, getOnboardingStatus } from "@/lib/api/onboarding.fu
 import { getFortnoxAuthUrl, getFortnoxStatus } from "@/lib/api/fortnox.functions";
 import logo from "@/assets/pejl-logo.png";
 
-const FORTNOX_REDIRECT_URI = "https://pejl-cash-flow-buddy.lovable.app/auth/fortnox/callback";
+const FORTNOX_REDIRECT_URI = "https://pejl.io/auth/fortnox/callback";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
   head: () => ({

@@ -19,12 +19,12 @@ async function syncFortnoxForUser(userId: string) {
   const accessToken = await ensureFreshFortnoxToken(conn);
   const { companyName, transactions } = await fetchFortnoxOpenTransactions(accessToken);
 
-  // Ersätt alla tidigare Fortnox-hämtade rader med den färska uppsättningen.
+  // När riktig Fortnox-data finns ersätter den både tidigare Fortnox-rader och demo-data.
   const { error: delErr } = await supabaseAdmin
     .from("transactions")
     .delete()
     .eq("user_id", userId)
-    .eq("source", "fortnox");
+    .in("source", ["fortnox", "mock"]);
   if (delErr) throw new Error(delErr.message);
 
   if (transactions.length > 0) {
@@ -94,7 +94,7 @@ export const getFortnoxAuthUrl = createServerFn({ method: "POST" })
       data?.redirectUri && /^https?:\/\//.test(data.redirectUri)
         ? data.redirectUri
         : (process.env.FORTNOX_REDIRECT_URI ??
-          "http://localhost:8080/auth/fortnox/callback");
+          "https://pejl.io/auth/fortnox/callback");
     console.log("[Fortnox] Bygger OAuth-URL med redirectUri:", redirectUri);
     const params = new URLSearchParams({
       client_id: clientId,
@@ -158,7 +158,7 @@ export const exchangeFortnoxCode = createServerFn({ method: "POST" })
       data.redirectUri && /^https?:\/\//.test(data.redirectUri)
         ? data.redirectUri
         : (process.env.FORTNOX_REDIRECT_URI ??
-          "http://localhost:8080/auth/fortnox/callback");
+          "https://pejl.io/auth/fortnox/callback");
     const body = new URLSearchParams({
       grant_type: "authorization_code",
       code: data.code,
