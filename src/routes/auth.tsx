@@ -215,7 +215,7 @@ function AuthPage() {
                 onMouseEnter={prepareFortnoxAuthUrl}
                 onFocus={prepareFortnoxAuthUrl}
                 onClick={async () => {
-                  console.log("[Fortnox] Koppla-knapp (auth) klickad. redirectUri =", FORTNOX_REDIRECT_URI);
+                  console.log("[Fortnox] Koppla-knapp (auth) klickad. redirectUri =", getFortnoxRedirectUri());
                   try {
                     const { data } = await supabase.auth.getUser();
                     if (!data.user) {
