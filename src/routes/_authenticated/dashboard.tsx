@@ -342,6 +342,13 @@ function DashboardPage() {
             </div>
           </div>
           <div className="flex items-center gap-1">
+            {isAgency && (
+              <Link to="/byra">
+                <Button variant="ghost" size="sm" className="text-muted-foreground">
+                  <Users className="size-4" /> Byråvy
+                </Button>
+              </Link>
+            )}
             <Link to="/installningar">
               <Button variant="ghost" size="sm" className="text-muted-foreground">
                 <SettingsIcon className="size-4" /> Inställningar
