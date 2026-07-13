@@ -1037,8 +1037,12 @@ function Landing() {
             }}
           >
             Redovisningsbyrå? Kontakta oss för byråpris. →{" "}
-            <a href="mailto:hej@pejl.se" style={{ color: "var(--amber)" }}>
-              hej@pejl.se
+            <a href="mailto:Ivarblothkarling@gmail.com" style={{ color: "var(--amber)" }}>
+              Ivarblothkarling@gmail.com
+            </a>{" "}
+            · 070-310 56 44 · Lucas Tikkanen{" "}
+            <a href="mailto:tikkanenco@gmail.com" style={{ color: "var(--amber)" }}>
+              tikkanenco@gmail.com
             </a>
           </p>
         </div>
@@ -1089,7 +1093,9 @@ function Landing() {
         <div className="footer-links">
           <a onClick={goDashboard}>Prova demo</a>
           <a href="/integritetspolicy">Integritetspolicy</a>
-          <a href="mailto:hej@pejl.se">hej@pejl.se</a>
+          <a href="mailto:Ivarblothkarling@gmail.com">Ivar · Ivarblothkarling@gmail.com</a>
+          <a href="tel:+46703105644">070-310 56 44</a>
+          <a href="mailto:tikkanenco@gmail.com">Lucas · tikkanenco@gmail.com</a>
         </div>
         <p className="footer-copy">© {new Date().getFullYear()} Pejl AB · Stockholm</p>
       </footer>

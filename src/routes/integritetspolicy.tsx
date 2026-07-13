@@ -71,15 +71,26 @@ function Integritetspolicy() {
 
           <Section title="Kontakt">
             <p className="text-muted-foreground">
-              Frågor om integritetspolicyn? Skicka ett mejl till{" "}
-              <a
-                href="mailto:hej@pejl.se"
-                className="font-medium text-primary hover:underline"
-              >
-                hej@pejl.se
-              </a>
-              .
+              Frågor om integritetspolicyn? Kontakta oss:
             </p>
+            <ul className="mt-2 space-y-1 text-muted-foreground">
+              <li>
+                Ivar Blothkarling —{" "}
+                <a href="mailto:Ivarblothkarling@gmail.com" className="font-medium text-primary hover:underline">
+                  Ivarblothkarling@gmail.com
+                </a>{" "}
+                ·{" "}
+                <a href="tel:+46703105644" className="font-medium text-primary hover:underline">
+                  070-310 56 44
+                </a>
+              </li>
+              <li>
+                Lucas Tikkanen —{" "}
+                <a href="mailto:tikkanenco@gmail.com" className="font-medium text-primary hover:underline">
+                  tikkanenco@gmail.com
+                </a>
+              </li>
+            </ul>
           </Section>
         </div>
 
