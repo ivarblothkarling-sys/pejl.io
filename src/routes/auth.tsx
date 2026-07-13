@@ -109,8 +109,8 @@ function AuthPage() {
       toast.error("Fyll i e-postadress.");
       return;
     }
-    if (mode === "signup" && password.length < 8) {
-      toast.error("Lösenordet måste vara minst 8 tecken.");
+    if (mode === "signup" && password.length < 6) {
+      toast.error("Lösenordet måste vara minst 6 tecken.");
       return;
     }
     setLoading(true);
