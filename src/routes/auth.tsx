@@ -9,7 +9,7 @@ import { Link2 } from "lucide-react";
 import { getFortnoxAuthUrl } from "@/lib/api/fortnox.functions";
 import logo from "@/assets/pejl-logo.png";
 
-const FORTNOX_REDIRECT_URI = "https://pejl-cash-flow-buddy.lovable.app/auth/fortnox/callback";
+const FORTNOX_REDIRECT_URI = "https://pejl.io/auth/fortnox/callback";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -135,7 +135,7 @@ function AuthPage() {
         const { error } = await supabase.auth.signInWithPassword({ email: trimmedEmail, password });
         if (error) throw error;
       }
-      navigate({ to: "/dashboard" });
+      navigate({ to: mode === "signup" ? "/onboarding" : "/dashboard" });
     } catch (err) {
       console.error("[Auth]", err);
       toast.error(translateAuthError(err, mode));

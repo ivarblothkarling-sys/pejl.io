@@ -5,6 +5,13 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 export const getOnboardingStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const { ensureUserBootstrap } = await import("@/lib/userBootstrap.server");
+    await ensureUserBootstrap({
+      supabase: context.supabase,
+      userId: context.userId,
+      claims: context.claims,
+    });
+
     const { data, error } = await context.supabase
       .from("profiles")
       .select("onboarding_completed, threshold, company_name")
@@ -35,8 +42,7 @@ export const completeOnboarding = createServerFn({ method: "POST" })
     if (data.companyName && data.companyName.trim()) update.company_name = data.companyName.trim();
     const { error } = await context.supabase
       .from("profiles")
-      .update(update)
-      .eq("id", context.userId);
+      .upsert({ id: context.userId, ...update }, { onConflict: "id" });
     if (error) throw new Error(error.message);
     return { ok: true };
   });

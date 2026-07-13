@@ -9,6 +9,8 @@ export const getDashboardData = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    const { ensureUserBootstrap } = await import("@/lib/userBootstrap.server");
+    await ensureUserBootstrap({ supabase, userId, claims: context.claims });
 
     const [profileRes, txRes] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
@@ -22,7 +24,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
     if (profileRes.error) throw new Error(profileRes.error.message);
     if (txRes.error) throw new Error(txRes.error.message);
 
-    const profile = profileRes.data ?? { current_balance: 0, threshold: 0, company_name: "Mitt företag", country: "SE", currency: "SEK", language: "sv", accounting_provider: "fortnox" };
+    const profile = profileRes.data ?? { current_balance: 0, threshold: 0, company_name: "Mitt företag", country: "SE", currency: "SEK", language: "sv", accounting_provider: "fortnox", onboarding_completed: false };
     const country = (profile as { country?: string }).country ?? "SE";
     const transactions = [
       ...((txRes.data ?? []) as Tx[]),
@@ -77,8 +79,10 @@ export const updateThreshold = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase
       .from("profiles")
-      .update({ threshold: data.threshold, updated_at: new Date().toISOString() })
-      .eq("id", context.userId);
+      .upsert(
+        { id: context.userId, threshold: data.threshold, updated_at: new Date().toISOString() },
+        { onConflict: "id" },
+      );
     if (error) throw new Error(error.message);
     return { ok: true };
   });
