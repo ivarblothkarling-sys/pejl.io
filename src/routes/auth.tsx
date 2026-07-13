@@ -171,14 +171,14 @@ function AuthPage() {
                 id="password"
                 type="password"
                 required
-                minLength={mode === "signup" ? 8 : 6}
+                minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete={mode === "signup" ? "new-password" : "current-password"}
               />
               {mode === "signup" && (
                 <p className="text-[11px] text-muted-foreground">
-                  Minst 8 tecken. Undvik vanliga lösenord — vi blockerar lösenord som läckt tidigare.
+                  Minst 6 tecken.
                 </p>
               )}
             </div>
