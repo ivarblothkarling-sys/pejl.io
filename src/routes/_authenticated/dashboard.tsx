@@ -78,6 +78,16 @@ function DashboardPage() {
   const [fortnoxConnected, setFortnoxConnected] = useState(false);
   const [fortnoxLoading, setFortnoxLoading] = useState(false);
   const [fortnoxSyncing, setFortnoxSyncing] = useState(false);
+  const [isAgency, setIsAgency] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) return;
+      const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", data.user.id);
+      setIsAgency((roles ?? []).some((r) => r.role === "agency"));
+    })();
+  }, []);
   const [fortnoxAuthUrl, setFortnoxAuthUrl] = useState<string | null>(null);
   const fortnoxForm = useMemo(() => {
     if (!fortnoxAuthUrl) return null;
