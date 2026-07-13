@@ -57,11 +57,11 @@ function AuthPage() {
   const prepareFortnoxAuthUrl = async () => {
     if (fortnoxAuthUrl || fortnoxLoading) return;
     setFortnoxLoading(true);
-    console.log("[Fortnox] Förbereder OAuth-länk (auth). redirectUri =", FORTNOX_REDIRECT_URI);
+    console.log("[Fortnox] Förbereder OAuth-länk (auth). redirectUri =", getFortnoxRedirectUri());
     try {
       const { data } = await supabase.auth.getUser();
       if (!data.user) return;
-      const { url } = await getFortnoxAuthUrl({ data: { redirectUri: FORTNOX_REDIRECT_URI } });
+      const { url } = await getFortnoxAuthUrl({ data: { redirectUri: getFortnoxRedirectUri() } });
       console.log("[Fortnox] OAuth-URL förberedd (auth):", url);
       setFortnoxAuthUrl(url);
     } catch (err) {
