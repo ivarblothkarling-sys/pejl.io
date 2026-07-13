@@ -53,7 +53,7 @@ function OnboardingPage() {
     getFortnoxStatus()
       .then((s) => setFortnoxConnected(s.connected))
       .catch(() => {});
-    getFortnoxAuthUrl({ data: { redirectUri: FORTNOX_REDIRECT_URI } })
+    getFortnoxAuthUrl({ data: { redirectUri: getFortnoxRedirectUri() } })
       .then(({ url }) => setFortnoxAuthUrl(url))
       .catch(() => {});
     // If user returns from Fortnox callback with ?fortnox=connected
