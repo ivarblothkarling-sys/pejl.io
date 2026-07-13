@@ -143,7 +143,7 @@ function DashboardPage() {
   }, []);
 
   const handleConnectFortnox = async () => {
-    console.log("[Fortnox] Koppla-knapp klickad. redirectUri =", FORTNOX_REDIRECT_URI);
+    console.log("[Fortnox] Koppla-knapp klickad. redirectUri =", getFortnoxRedirectUri());
     console.log("[Fortnox] Skickar native form-submit till Fortnox i toppfliken.");
   };
 
