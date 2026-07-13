@@ -5,7 +5,7 @@ type SupabaseLike = {
 type ClaimsLike = {
   user_metadata?: { company_name?: string; company?: string };
   email?: string;
-};
+} & Record<string, unknown>;
 
 function addDaysIso(base: Date, days: number) {
   const d = new Date(base);
@@ -41,10 +41,10 @@ function mockTransactions(userId: string) {
     ["income", 7600, 14, "Kundfaktura #1046 - Hantverkarna i Söder"],
   ].map(([kind, amount, offset, description]) => ({
     user_id: userId,
-    kind,
-    amount,
+    kind: String(kind),
+    amount: Number(amount),
     due_date: addDaysIso(today, Number(offset)),
-    description,
+    description: String(description),
     paid: false,
     source: "mock",
   }));
