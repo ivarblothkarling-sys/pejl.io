@@ -116,8 +116,8 @@ function DashboardPage() {
         setFortnoxConnected(s.connected);
         if (!s.connected) {
           setFortnoxLoading(true);
-          console.log("[Fortnox] Förbereder OAuth-länk. redirectUri =", FORTNOX_REDIRECT_URI);
-          getFortnoxAuthUrl({ data: { redirectUri: FORTNOX_REDIRECT_URI } })
+          console.log("[Fortnox] Förbereder OAuth-länk. redirectUri =", getFortnoxRedirectUri());
+          getFortnoxAuthUrl({ data: { redirectUri: getFortnoxRedirectUri() } })
             .then(({ url }) => {
               console.log("[Fortnox] OAuth-URL förberedd:", url);
               setFortnoxAuthUrl(url);
