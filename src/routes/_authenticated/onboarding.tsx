@@ -11,7 +11,10 @@ import { completeOnboarding, getOnboardingStatus } from "@/lib/api/onboarding.fu
 import { getFortnoxAuthUrl, getFortnoxStatus } from "@/lib/api/fortnox.functions";
 import logo from "@/assets/pejl-logo.png";
 
-const FORTNOX_REDIRECT_URI = "https://pejl.io/auth/fortnox/callback";
+const getFortnoxRedirectUri = () =>
+  typeof window !== "undefined"
+    ? `${window.location.origin}/auth/fortnox/callback`
+    : "https://pejl.io/auth/fortnox/callback";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
   head: () => ({
@@ -50,7 +53,7 @@ function OnboardingPage() {
     getFortnoxStatus()
       .then((s) => setFortnoxConnected(s.connected))
       .catch(() => {});
-    getFortnoxAuthUrl({ data: { redirectUri: FORTNOX_REDIRECT_URI } })
+    getFortnoxAuthUrl({ data: { redirectUri: getFortnoxRedirectUri() } })
       .then(({ url }) => setFortnoxAuthUrl(url))
       .catch(() => {});
     // If user returns from Fortnox callback with ?fortnox=connected

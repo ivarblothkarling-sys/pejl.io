@@ -9,7 +9,10 @@ import { Link2 } from "lucide-react";
 import { getFortnoxAuthUrl } from "@/lib/api/fortnox.functions";
 import logo from "@/assets/pejl-logo.png";
 
-const FORTNOX_REDIRECT_URI = "https://pejl.io/auth/fortnox/callback";
+const getFortnoxRedirectUri = () =>
+  typeof window !== "undefined"
+    ? `${window.location.origin}/auth/fortnox/callback`
+    : "https://pejl.io/auth/fortnox/callback";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -54,11 +57,11 @@ function AuthPage() {
   const prepareFortnoxAuthUrl = async () => {
     if (fortnoxAuthUrl || fortnoxLoading) return;
     setFortnoxLoading(true);
-    console.log("[Fortnox] Förbereder OAuth-länk (auth). redirectUri =", FORTNOX_REDIRECT_URI);
+    console.log("[Fortnox] Förbereder OAuth-länk (auth). redirectUri =", getFortnoxRedirectUri());
     try {
       const { data } = await supabase.auth.getUser();
       if (!data.user) return;
-      const { url } = await getFortnoxAuthUrl({ data: { redirectUri: FORTNOX_REDIRECT_URI } });
+      const { url } = await getFortnoxAuthUrl({ data: { redirectUri: getFortnoxRedirectUri() } });
       console.log("[Fortnox] OAuth-URL förberedd (auth):", url);
       setFortnoxAuthUrl(url);
     } catch (err) {
@@ -212,7 +215,7 @@ function AuthPage() {
                 onMouseEnter={prepareFortnoxAuthUrl}
                 onFocus={prepareFortnoxAuthUrl}
                 onClick={async () => {
-                  console.log("[Fortnox] Koppla-knapp (auth) klickad. redirectUri =", FORTNOX_REDIRECT_URI);
+                  console.log("[Fortnox] Koppla-knapp (auth) klickad. redirectUri =", getFortnoxRedirectUri());
                   try {
                     const { data } = await supabase.auth.getUser();
                     if (!data.user) {

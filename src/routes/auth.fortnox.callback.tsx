@@ -34,7 +34,7 @@ function FortnoxCallback() {
         if (!code) throw new Error("Ingen kod mottagen från Fortnox.");
         const state = url.searchParams.get("state");
         if (!state) throw new Error("Säkerhetskontrollen från Fortnox saknas. Starta kopplingen igen.");
-        const redirectUri = "https://pejl.io/auth/fortnox/callback";
+        const redirectUri = `${window.location.origin}/auth/fortnox/callback`;
         await exchange({ data: { code, state, redirectUri } });
         setStatus("ok");
         setMessage("Fortnox är anslutet.");

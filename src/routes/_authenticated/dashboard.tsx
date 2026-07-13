@@ -58,7 +58,10 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 type DashData = Awaited<ReturnType<typeof getDashboardData>>;
-const FORTNOX_REDIRECT_URI = "https://pejl.io/auth/fortnox/callback";
+const getFortnoxRedirectUri = () =>
+  typeof window !== "undefined"
+    ? `${window.location.origin}/auth/fortnox/callback`
+    : "https://pejl.io/auth/fortnox/callback";
 
 function DashboardPage() {
   const navigate = useNavigate();
@@ -113,8 +116,8 @@ function DashboardPage() {
         setFortnoxConnected(s.connected);
         if (!s.connected) {
           setFortnoxLoading(true);
-          console.log("[Fortnox] Förbereder OAuth-länk. redirectUri =", FORTNOX_REDIRECT_URI);
-          getFortnoxAuthUrl({ data: { redirectUri: FORTNOX_REDIRECT_URI } })
+          console.log("[Fortnox] Förbereder OAuth-länk. redirectUri =", getFortnoxRedirectUri());
+          getFortnoxAuthUrl({ data: { redirectUri: getFortnoxRedirectUri() } })
             .then(({ url }) => {
               console.log("[Fortnox] OAuth-URL förberedd:", url);
               setFortnoxAuthUrl(url);
@@ -140,7 +143,7 @@ function DashboardPage() {
   }, []);
 
   const handleConnectFortnox = async () => {
-    console.log("[Fortnox] Koppla-knapp klickad. redirectUri =", FORTNOX_REDIRECT_URI);
+    console.log("[Fortnox] Koppla-knapp klickad. redirectUri =", getFortnoxRedirectUri());
     console.log("[Fortnox] Skickar native form-submit till Fortnox i toppfliken.");
   };
 
