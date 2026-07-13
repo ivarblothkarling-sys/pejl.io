@@ -58,7 +58,10 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 type DashData = Awaited<ReturnType<typeof getDashboardData>>;
-const FORTNOX_REDIRECT_URI = "https://pejl.io/auth/fortnox/callback";
+const getFortnoxRedirectUri = () =>
+  typeof window !== "undefined"
+    ? `${window.location.origin}/auth/fortnox/callback`
+    : "https://pejl.io/auth/fortnox/callback";
 
 function DashboardPage() {
   const navigate = useNavigate();
