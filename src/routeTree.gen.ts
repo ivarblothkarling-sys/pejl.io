@@ -18,6 +18,7 @@ import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedInstallningarRouteImport } from './routes/_authenticated/installningar'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedByraRouteImport } from './routes/_authenticated/byra'
 import { Route as AuthFortnoxCallbackRouteImport } from './routes/auth.fortnox.callback'
 
 const IntegritetspolicyRoute = IntegritetspolicyRouteImport.update({
@@ -65,6 +66,11 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedByraRoute = AuthenticatedByraRouteImport.update({
+  id: '/byra',
+  path: '/byra',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthFortnoxCallbackRoute = AuthFortnoxCallbackRouteImport.update({
   id: '/fortnox/callback',
   path: '/fortnox/callback',
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
   '/integritetspolicy': typeof IntegritetspolicyRoute
+  '/byra': typeof AuthenticatedByraRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/installningar': typeof AuthenticatedInstallningarRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
@@ -86,6 +93,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
   '/integritetspolicy': typeof IntegritetspolicyRoute
+  '/byra': typeof AuthenticatedByraRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/installningar': typeof AuthenticatedInstallningarRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
@@ -99,6 +107,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRouteWithChildren
   '/integritetspolicy': typeof IntegritetspolicyRoute
+  '/_authenticated/byra': typeof AuthenticatedByraRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/installningar': typeof AuthenticatedInstallningarRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
@@ -112,6 +121,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/integritetspolicy'
+    | '/byra'
     | '/dashboard'
     | '/installningar'
     | '/onboarding'
@@ -123,6 +133,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/integritetspolicy'
+    | '/byra'
     | '/dashboard'
     | '/installningar'
     | '/onboarding'
@@ -135,6 +146,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/integritetspolicy'
+    | '/_authenticated/byra'
     | '/_authenticated/dashboard'
     | '/_authenticated/installningar'
     | '/_authenticated/onboarding'
@@ -217,6 +229,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/byra': {
+      id: '/_authenticated/byra'
+      path: '/byra'
+      fullPath: '/byra'
+      preLoaderRoute: typeof AuthenticatedByraRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/auth/fortnox/callback': {
       id: '/auth/fortnox/callback'
       path: '/fortnox/callback'
@@ -228,12 +247,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedByraRoute: typeof AuthenticatedByraRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedInstallningarRoute: typeof AuthenticatedInstallningarRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedByraRoute: AuthenticatedByraRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedInstallningarRoute: AuthenticatedInstallningarRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,

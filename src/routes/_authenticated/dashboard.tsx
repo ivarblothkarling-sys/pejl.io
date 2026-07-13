@@ -15,7 +15,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, BellRing, CalendarClock, Check, CheckCircle2, Copy, Landmark, Link2, LogOut, PlayCircle, Settings as SettingsIcon, Share2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
+import { AlertTriangle, BellRing, CalendarClock, Check, CheckCircle2, Copy, Landmark, Link2, LogOut, PlayCircle, Settings as SettingsIcon, Share2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Users, Wallet, X } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -78,6 +78,16 @@ function DashboardPage() {
   const [fortnoxConnected, setFortnoxConnected] = useState(false);
   const [fortnoxLoading, setFortnoxLoading] = useState(false);
   const [fortnoxSyncing, setFortnoxSyncing] = useState(false);
+  const [isAgency, setIsAgency] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) return;
+      const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", data.user.id);
+      setIsAgency((roles ?? []).some((r) => r.role === "agency"));
+    })();
+  }, []);
   const [fortnoxAuthUrl, setFortnoxAuthUrl] = useState<string | null>(null);
   const fortnoxForm = useMemo(() => {
     if (!fortnoxAuthUrl) return null;
@@ -332,6 +342,13 @@ function DashboardPage() {
             </div>
           </div>
           <div className="flex items-center gap-1">
+            {isAgency && (
+              <Link to="/byra">
+                <Button variant="ghost" size="sm" className="text-muted-foreground">
+                  <Users className="size-4" /> Byråvy
+                </Button>
+              </Link>
+            )}
             <Link to="/installningar">
               <Button variant="ghost" size="sm" className="text-muted-foreground">
                 <SettingsIcon className="size-4" /> Inställningar
