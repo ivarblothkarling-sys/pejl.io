@@ -888,14 +888,21 @@ function KpiCard({
   );
 }
 
-const SUGGESTED = [
+const SUGGESTED_FALLBACK = [
   "Hur går det ekonomiskt just nu?",
   "När förfaller min nästa momsdeklaration?",
-  "Klarar jag arbetsgivaravgifterna den 12:e?",
   "Vilka kundfakturor är mer än 30 dagar försenade?",
 ];
 
-function ChatPanel() {
+function ChatPanel({
+  greeting,
+  suggestions,
+  injectRef,
+}: {
+  greeting: string | null;
+  suggestions: string[];
+  injectRef: React.MutableRefObject<((text: string) => void) | null>;
+}) {
   const [token, setToken] = useState<string | null>(null);
   const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
   const persistedIds = useRef<Set<string>>(new Set());
