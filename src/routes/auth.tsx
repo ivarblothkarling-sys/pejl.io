@@ -149,6 +149,34 @@ function AuthPage() {
     }
   }
 
+  async function handleOAuth(provider: "google" | "microsoft") {
+    if (oauthLoading) return;
+    setOauthLoading(provider);
+    try {
+      const result = await lovable.auth.signInWithOAuth(provider, {
+        redirect_uri: window.location.origin,
+      });
+      if (result.error) {
+        const msg = result.error instanceof Error ? result.error.message : String(result.error);
+        console.error(`[Auth] ${provider} OAuth error`, result.error);
+        if (provider === "microsoft" && /provider|unsupported|not enabled|disabled/i.test(msg)) {
+          toast.error("Microsoft-inloggning är inte aktiverad ännu. Vi hör av oss så fort det är på plats — använd Google eller e-post så länge.");
+        } else {
+          toast.error(msg || `Kunde inte logga in med ${provider}.`);
+        }
+        return;
+      }
+      if (result.redirected) return; // browsern navigerar iväg
+      // Session satt av lovable-wrappern — gå vidare
+      navigate({ to: "/dashboard" });
+    } catch (err) {
+      console.error(`[Auth] ${provider} OAuth threw`, err);
+      toast.error(err instanceof Error ? err.message : `Kunde inte logga in med ${provider}.`);
+    } finally {
+      setOauthLoading(null);
+    }
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-b from-background via-secondary/40 to-background">
       <div className="w-full max-w-sm">
