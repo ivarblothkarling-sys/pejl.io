@@ -372,11 +372,21 @@ function DashboardPage() {
       toast.success("Påminnelse skickad", {
         description: "Acme AB bekräftade — betalar inom 2 dagar. Prognosen uppdaterad.",
       });
+      // Beräkna nya prognosens stabila slutdatum för aktiv bekräftelse i chatten
+      const endDate = forecast.points[forecast.points.length - 1]?.date;
+      chatInjectRef.current?.(
+        `Bra — påminnelsen skickades till Acme AB och prognosen ser nu stabil ut${endDate ? ` fram till den ${formatDateSv(endDate)}` : ""}. Saldot håller sig över din gräns på ${formatSEK(forecast.threshold)} hela perioden. Vill du att jag följer upp om Acme inte betalar i tid?`,
+      );
       return;
     }
     toast.success(
       s.kind === "remind" ? "Påminnelse skickad (demo)" : "Betalning uppskjuten (demo)",
       { description: s.detail },
+    );
+    chatInjectRef.current?.(
+      s.kind === "remind"
+        ? `Noterat — jag har flaggat en påminnelse för "${s.label}". ${s.detail}`
+        : `Noterat — vi skjuter fram "${s.label}". ${s.detail}`,
     );
   };
 
