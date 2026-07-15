@@ -77,6 +77,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "google-site-verification", content: "EvHRzWC2aANVTDcTZ8cU_BDhVLiOFjonoa20v7AN7yU" },
       { title: "Pejl AB" },
       { name: "description", content: "Pejl provides small business owners with a 14-day cash flow forecast and financial insights." },
       { name: "author", content: "Lovable" },
