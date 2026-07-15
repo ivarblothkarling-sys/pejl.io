@@ -977,17 +977,36 @@ function ChatInner({
   initialMessages,
   persistedIds,
   taRef,
+  suggestions,
+  injectRef,
 }: {
   transport: DefaultChatTransport<UIMessage>;
   initialMessages: UIMessage[];
   persistedIds: React.MutableRefObject<Set<string>>;
   taRef: React.RefObject<HTMLTextAreaElement | null>;
+  suggestions: string[];
+  injectRef: React.MutableRefObject<((text: string) => void) | null>;
 }) {
-  const { messages, sendMessage, status } = useChat({
+  const { messages, setMessages, sendMessage, status } = useChat({
     transport,
     messages: initialMessages,
   });
   const isLoading = status === "submitted" || status === "streaming";
+
+  // Registrera injector så dashboarden kan skjuta in proaktiva bekräftelser
+  useEffect(() => {
+    injectRef.current = (text: string) => {
+      const id = `local-inject-${Date.now()}`;
+      persistedIds.current.add(id);
+      setMessages((prev) => [
+        ...prev,
+        { id, role: "assistant", parts: [{ type: "text", text }] },
+      ]);
+    };
+    return () => {
+      injectRef.current = null;
+    };
+  }, [injectRef, setMessages, persistedIds]);
 
   // Persist new messages once
   useEffect(() => {
