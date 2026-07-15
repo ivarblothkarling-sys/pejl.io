@@ -832,7 +832,11 @@ function DashboardPage() {
             <h3 className="font-semibold">Fråga Pejl</h3>
             <p className="text-xs text-muted-foreground mt-0.5">T.ex. "vilka fakturor är obetalda?" eller "hur går det ekonomiskt?"</p>
           </div>
-          <ChatPanel />
+          <ChatPanel
+            greeting={chatGreeting}
+            suggestions={finalSuggestions}
+            injectRef={chatInjectRef}
+          />
         </section>
       </main>
     </div>
