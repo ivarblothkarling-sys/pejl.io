@@ -220,6 +220,36 @@ function AuthPage() {
             </Button>
           </form>
 
+          <div className="mt-5 flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-[11px] uppercase tracking-wider text-muted-foreground">Eller fortsätt med</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full gap-2"
+              onClick={() => handleOAuth("google")}
+              disabled={!!oauthLoading}
+            >
+              <GoogleLogo className="size-4" />
+              {oauthLoading === "google" ? "Öppnar Google…" : "Fortsätt med Google"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full gap-2"
+              onClick={() => handleOAuth("microsoft")}
+              disabled={!!oauthLoading}
+            >
+              <MicrosoftLogo className="size-4" />
+              {oauthLoading === "microsoft" ? "Öppnar Microsoft…" : "Fortsätt med Microsoft"}
+            </Button>
+          </div>
+
+
           <div className="mt-4 pt-4 border-t border-border">
             {fortnoxForm ? (
               <form
