@@ -1047,7 +1047,7 @@ function ChatInner({
               description="Pejl svarar baserat på din Fortnox-data (mock) och 30-dagars prognosen."
             >
               <div className="flex flex-wrap gap-2 justify-center mt-3">
-                {SUGGESTED.map((s) => (
+                {suggestions.map((s) => (
                   <button
                     key={s}
                     onClick={() => send(s)}
