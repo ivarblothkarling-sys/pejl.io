@@ -298,9 +298,58 @@ function DashboardPage() {
     confirmed: i <= CONFIRMED_DAYS ? p.balance : null,
     indicative: i >= CONFIRMED_DAYS ? p.balance : null,
   }));
-  
 
   const upcomingUnpaid = transactions.filter((t) => !t.paid).slice(0, 8);
+
+  // Proaktiv chatt-hälsning + datadrivna förslag
+  const daysUntilBreach = forecast.breachDate
+    ? Math.max(
+        0,
+        Math.round(
+          (new Date(forecast.breachDate).getTime() -
+            new Date().setHours(0, 0, 0, 0)) /
+            86_400_000,
+        ),
+      )
+    : 0;
+  const chatGreeting = hasBreach
+    ? `Hej 👋 Jag ser att du har ett potentiellt likviditetsproblem om **${daysUntilBreach} dagar** — den **${formatDateSv(forecast.breachDate!)}** beräknas saldot bli **${formatSEK(forecast.breachAmount ?? 0)}**, vilket är under din gräns på ${formatSEK(forecast.threshold)}.\n\nVill du att jag hjälper dig lösa det?`
+    : null;
+
+  const smartSuggestions: string[] = [];
+  if (hasBreach) {
+    smartSuggestions.push(
+      `Hur undviker jag varningen den ${formatDateSv(forecast.breachDate!)}?`,
+    );
+  }
+  const nextTaxTx = transactions
+    .filter((t) => t.category === "tax" && !t.paid)
+    .sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
+  if (nextTaxTx && smartSuggestions.length < 3) {
+    smartSuggestions.push(
+      `Klarar jag ${nextTaxTx.description.toLowerCase()} den ${formatDateSv(nextTaxTx.due_date)} (${formatSEK(Number(nextTaxTx.amount))})?`,
+    );
+  }
+  const bigIncome = transactions
+    .filter((t) => !t.paid && t.kind === "income")
+    .sort((a, b) => Number(b.amount) - Number(a.amount))[0];
+  if (bigIncome && smartSuggestions.length < 3) {
+    smartSuggestions.push(
+      `Vad händer om ${bigIncome.description} (${formatSEK(Number(bigIncome.amount))}) betalas 5 dagar sent?`,
+    );
+  }
+  const bigExpense = transactions
+    .filter((t) => !t.paid && t.kind === "expense" && t.category !== "tax")
+    .sort((a, b) => Number(b.amount) - Number(a.amount))[0];
+  if (bigExpense && smartSuggestions.length < 3) {
+    smartSuggestions.push(
+      `Kan jag skjuta upp ${bigExpense.description.toLowerCase()} den ${formatDateSv(bigExpense.due_date)}?`,
+    );
+  }
+  while (smartSuggestions.length < 3) {
+    smartSuggestions.push("Hur går det ekonomiskt just nu?");
+  }
+  const finalSuggestions = smartSuggestions.slice(0, 3);
 
   const taxItems = transactions
     .filter((t) => t.category === "tax" && !t.paid)
