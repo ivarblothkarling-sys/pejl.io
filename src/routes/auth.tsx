@@ -34,6 +34,7 @@ function AuthPage() {
   const [password, setPassword] = useState("");
   const [company, setCompany] = useState("");
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState<null | "google" | "microsoft">(null);
   const [fortnoxAuthUrl, setFortnoxAuthUrl] = useState<string | null>(null);
   const [fortnoxLoading, setFortnoxLoading] = useState(false);
   const fortnoxForm = fortnoxAuthUrl
