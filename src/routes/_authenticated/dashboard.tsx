@@ -79,6 +79,7 @@ function DashboardPage() {
   const [fortnoxLoading, setFortnoxLoading] = useState(false);
   const [fortnoxSyncing, setFortnoxSyncing] = useState(false);
   const [isAgency, setIsAgency] = useState(false);
+  const chatInjectRef = useRef<((text: string) => void) | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -298,9 +299,58 @@ function DashboardPage() {
     confirmed: i <= CONFIRMED_DAYS ? p.balance : null,
     indicative: i >= CONFIRMED_DAYS ? p.balance : null,
   }));
-  
 
   const upcomingUnpaid = transactions.filter((t) => !t.paid).slice(0, 8);
+
+  // Proaktiv chatt-hälsning + datadrivna förslag
+  const daysUntilBreach = forecast.breachDate
+    ? Math.max(
+        0,
+        Math.round(
+          (new Date(forecast.breachDate).getTime() -
+            new Date().setHours(0, 0, 0, 0)) /
+            86_400_000,
+        ),
+      )
+    : 0;
+  const chatGreeting = hasBreach
+    ? `Hej 👋 Jag ser att du har ett potentiellt likviditetsproblem om **${daysUntilBreach} dagar** — den **${formatDateSv(forecast.breachDate!)}** beräknas saldot bli **${formatSEK(forecast.breachAmount ?? 0)}**, vilket är under din gräns på ${formatSEK(forecast.threshold)}.\n\nVill du att jag hjälper dig lösa det?`
+    : null;
+
+  const smartSuggestions: string[] = [];
+  if (hasBreach) {
+    smartSuggestions.push(
+      `Hur undviker jag varningen den ${formatDateSv(forecast.breachDate!)}?`,
+    );
+  }
+  const nextTaxTx = transactions
+    .filter((t) => t.category === "tax" && !t.paid)
+    .sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
+  if (nextTaxTx && smartSuggestions.length < 3) {
+    smartSuggestions.push(
+      `Klarar jag ${nextTaxTx.description.toLowerCase()} den ${formatDateSv(nextTaxTx.due_date)} (${formatSEK(Number(nextTaxTx.amount))})?`,
+    );
+  }
+  const bigIncome = transactions
+    .filter((t) => !t.paid && t.kind === "income")
+    .sort((a, b) => Number(b.amount) - Number(a.amount))[0];
+  if (bigIncome && smartSuggestions.length < 3) {
+    smartSuggestions.push(
+      `Vad händer om ${bigIncome.description} (${formatSEK(Number(bigIncome.amount))}) betalas 5 dagar sent?`,
+    );
+  }
+  const bigExpense = transactions
+    .filter((t) => !t.paid && t.kind === "expense" && t.category !== "tax")
+    .sort((a, b) => Number(b.amount) - Number(a.amount))[0];
+  if (bigExpense && smartSuggestions.length < 3) {
+    smartSuggestions.push(
+      `Kan jag skjuta upp ${bigExpense.description.toLowerCase()} den ${formatDateSv(bigExpense.due_date)}?`,
+    );
+  }
+  while (smartSuggestions.length < 3) {
+    smartSuggestions.push("Hur går det ekonomiskt just nu?");
+  }
+  const finalSuggestions = smartSuggestions.slice(0, 3);
 
   const taxItems = transactions
     .filter((t) => t.category === "tax" && !t.paid)
@@ -322,11 +372,21 @@ function DashboardPage() {
       toast.success("Påminnelse skickad", {
         description: "Acme AB bekräftade — betalar inom 2 dagar. Prognosen uppdaterad.",
       });
+      // Beräkna nya prognosens stabila slutdatum för aktiv bekräftelse i chatten
+      const endDate = forecast.points[forecast.points.length - 1]?.date;
+      chatInjectRef.current?.(
+        `Bra — påminnelsen skickades till Acme AB och prognosen ser nu stabil ut${endDate ? ` fram till den ${formatDateSv(endDate)}` : ""}. Saldot håller sig över din gräns på ${formatSEK(forecast.threshold)} hela perioden. Vill du att jag följer upp om Acme inte betalar i tid?`,
+      );
       return;
     }
     toast.success(
       s.kind === "remind" ? "Påminnelse skickad (demo)" : "Betalning uppskjuten (demo)",
       { description: s.detail },
+    );
+    chatInjectRef.current?.(
+      s.kind === "remind"
+        ? `Noterat — jag har flaggat en påminnelse för "${s.label}". ${s.detail}`
+        : `Noterat — vi skjuter fram "${s.label}". ${s.detail}`,
     );
   };
 
@@ -772,7 +832,11 @@ function DashboardPage() {
             <h3 className="font-semibold">Fråga Pejl</h3>
             <p className="text-xs text-muted-foreground mt-0.5">T.ex. "vilka fakturor är obetalda?" eller "hur går det ekonomiskt?"</p>
           </div>
-          <ChatPanel />
+          <ChatPanel
+            greeting={chatGreeting}
+            suggestions={finalSuggestions}
+            injectRef={chatInjectRef}
+          />
         </section>
       </main>
     </div>
@@ -824,14 +888,21 @@ function KpiCard({
   );
 }
 
-const SUGGESTED = [
+const SUGGESTED_FALLBACK = [
   "Hur går det ekonomiskt just nu?",
   "När förfaller min nästa momsdeklaration?",
-  "Klarar jag arbetsgivaravgifterna den 12:e?",
   "Vilka kundfakturor är mer än 30 dagar försenade?",
 ];
 
-function ChatPanel() {
+function ChatPanel({
+  greeting,
+  suggestions,
+  injectRef,
+}: {
+  greeting: string | null;
+  suggestions: string[];
+  injectRef: React.MutableRefObject<((text: string) => void) | null>;
+}) {
   const [token, setToken] = useState<string | null>(null);
   const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
   const persistedIds = useRef<Set<string>>(new Set());
@@ -861,8 +932,20 @@ function ChatPanel() {
             parts: [{ type: "text", text: r.content }],
           }));
       msgs.forEach((m) => persistedIds.current.add(m.id));
+
+      // Proaktiv hälsning om varning finns och det inte redan finns en pågående konversation
+      if (msgs.length === 0 && greeting) {
+        const greetId = `local-greeting-${Date.now()}`;
+        persistedIds.current.add(greetId);
+        msgs.push({
+          id: greetId,
+          role: "assistant",
+          parts: [{ type: "text", text: greeting }],
+        });
+      }
       setInitialMessages(msgs);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const transport = useMemo(() => {
@@ -883,6 +966,8 @@ function ChatPanel() {
       initialMessages={initialMessages}
       persistedIds={persistedIds}
       taRef={taRef}
+      suggestions={suggestions.length ? suggestions : SUGGESTED_FALLBACK}
+      injectRef={injectRef}
     />
   );
 }
@@ -892,17 +977,36 @@ function ChatInner({
   initialMessages,
   persistedIds,
   taRef,
+  suggestions,
+  injectRef,
 }: {
   transport: DefaultChatTransport<UIMessage>;
   initialMessages: UIMessage[];
   persistedIds: React.MutableRefObject<Set<string>>;
   taRef: React.RefObject<HTMLTextAreaElement | null>;
+  suggestions: string[];
+  injectRef: React.MutableRefObject<((text: string) => void) | null>;
 }) {
-  const { messages, sendMessage, status } = useChat({
+  const { messages, setMessages, sendMessage, status } = useChat({
     transport,
     messages: initialMessages,
   });
   const isLoading = status === "submitted" || status === "streaming";
+
+  // Registrera injector så dashboarden kan skjuta in proaktiva bekräftelser
+  useEffect(() => {
+    injectRef.current = (text: string) => {
+      const id = `local-inject-${Date.now()}`;
+      persistedIds.current.add(id);
+      setMessages((prev) => [
+        ...prev,
+        { id, role: "assistant", parts: [{ type: "text", text }] },
+      ]);
+    };
+    return () => {
+      injectRef.current = null;
+    };
+  }, [injectRef, setMessages, persistedIds]);
 
   // Persist new messages once
   useEffect(() => {
@@ -943,7 +1047,7 @@ function ChatInner({
               description="Pejl svarar baserat på din Fortnox-data (mock) och 30-dagars prognosen."
             >
               <div className="flex flex-wrap gap-2 justify-center mt-3">
-                {SUGGESTED.map((s) => (
+                {suggestions.map((s) => (
                   <button
                     key={s}
                     onClick={() => send(s)}
