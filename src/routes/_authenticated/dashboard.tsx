@@ -932,8 +932,20 @@ function ChatPanel({
             parts: [{ type: "text", text: r.content }],
           }));
       msgs.forEach((m) => persistedIds.current.add(m.id));
+
+      // Proaktiv hälsning om varning finns och det inte redan finns en pågående konversation
+      if (msgs.length === 0 && greeting) {
+        const greetId = `local-greeting-${Date.now()}`;
+        persistedIds.current.add(greetId);
+        msgs.push({
+          id: greetId,
+          role: "assistant",
+          parts: [{ type: "text", text: greeting }],
+        });
+      }
       setInitialMessages(msgs);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const transport = useMemo(() => {
@@ -954,6 +966,8 @@ function ChatPanel({
       initialMessages={initialMessages}
       persistedIds={persistedIds}
       taRef={taRef}
+      suggestions={suggestions.length ? suggestions : SUGGESTED_FALLBACK}
+      injectRef={injectRef}
     />
   );
 }
