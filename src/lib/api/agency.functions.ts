@@ -8,11 +8,8 @@ export const getAgencyClients = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
 
-    const { data: roles } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId);
-    const isAgency = (roles ?? []).some((r) => r.role === "agency");
+    // Byråvy är öppen för alla inloggade konton
+    const isAgency = true;
 
     if (!isAgency) return { isAgency: false, clients: [] as AgencyClient[] };
 
