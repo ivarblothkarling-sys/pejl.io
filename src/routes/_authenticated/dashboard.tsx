@@ -44,6 +44,7 @@ import {
 } from "@/lib/api/finance.functions";
 import { createShareLink } from "@/lib/api/share.functions";
 import { disconnectFortnox, getFortnoxAuthUrl, getFortnoxStatus, syncFortnox } from "@/lib/api/fortnox.functions";
+import { disconnectTink, getTinkAuthUrl, getTinkStatus, syncTink } from "@/lib/api/tink.functions";
 
 import logo from "@/assets/pejl-logo.png";
 
