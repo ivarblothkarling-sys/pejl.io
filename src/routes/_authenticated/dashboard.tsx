@@ -604,6 +604,39 @@ function DashboardPage() {
               {fortnoxLoading ? "Förbereder Fortnox…" : "Koppla Fortnox"}
             </Button>
           )}
+          {tinkStatus?.connected ? (
+            <>
+              <span className="inline-flex items-center gap-2 text-sm font-medium text-success bg-success/10 border border-success/30 rounded-full px-3 py-1.5">
+                <Landmark className="size-4" /> Bank ansluten
+              </span>
+              <Button variant="outline" size="sm" onClick={handleSyncTink} disabled={tinkSyncing}>
+                {tinkSyncing ? "Synkar…" : "Synka bank"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDisconnectTink}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                Koppla bort bank
+              </Button>
+            </>
+          ) : tinkForm ? (
+            <form action={tinkForm.action} method="GET" target="_top">
+              {tinkForm.params.map(([name, value]) => (
+                <input key={name} type="hidden" name={name} value={value} />
+              ))}
+              <Button type="submit" variant="outline" size="sm">
+                <Landmark className="size-4" />
+                Koppla bank
+              </Button>
+            </form>
+          ) : (
+            <Button variant="outline" size="sm" disabled>
+              <Landmark className="size-4" />
+              {tinkLoading ? "Förbereder bank…" : "Koppla bank"}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
