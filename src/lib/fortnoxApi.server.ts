@@ -153,6 +153,7 @@ export interface FortnoxFetchedTx {
   amount: number;
   dueDate: string;
   description: string;
+  approvalStatus?: "approved" | "pending_approval";
 }
 
 /** Hämtar öppna kund- och leverantörsfakturor och normaliserar till Tx-shape. */
