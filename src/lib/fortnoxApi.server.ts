@@ -194,12 +194,16 @@ export async function fetchFortnoxOpenTransactions(
     if (sup.Cancelled) continue;
     const amount = Number(sup.Balance ?? sup.Total ?? 0);
     if (!amount || !sup.DueDate) continue;
+    // Approved i Fortnox = fakturan är bokförd (Booked=true) eller har en
+    // registrerad attestant (AuthorizerName). Övrigt hamnar i attest-flödet.
+    const approved = Boolean(sup.Booked) || Boolean(sup.AuthorizerName);
     transactions.push({
       externalId: `sup-${sup.GivenNumber ?? crypto.randomUUID()}`,
       kind: "expense",
       amount,
       dueDate: sup.DueDate,
       description: `Leverantörsfaktura #${sup.GivenNumber ?? ""} — ${sup.SupplierName ?? "Okänd leverantör"}`.trim(),
+      approvalStatus: approved ? "approved" : "pending_approval",
     });
   }
 
