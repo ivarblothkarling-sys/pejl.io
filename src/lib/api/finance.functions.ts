@@ -24,10 +24,26 @@ export const getDashboardData = createServerFn({ method: "GET" })
     if (profileRes.error) throw new Error(profileRes.error.message);
     if (txRes.error) throw new Error(txRes.error.message);
 
-    const profile = profileRes.data ?? { current_balance: 0, threshold: 0, company_name: "Mitt företag", country: "SE", currency: "SEK", language: "sv", accounting_provider: "fortnox", onboarding_completed: false };
+    const profile = profileRes.data ?? { current_balance: 0, threshold: 0, company_name: "Mitt företag", country: "SE", currency: "SEK", language: "sv", accounting_provider: "fortnox", onboarding_completed: false, include_pending_in_forecast: false };
     const country = (profile as { country?: string }).country ?? "SE";
+    const includePending = Boolean((profile as { include_pending_in_forecast?: boolean }).include_pending_in_forecast);
+    const rawTxs = (txRes.data ?? []) as Tx[];
+
+    // Summera obetalda leverantörsfakturor per attest-status (SEK).
+    const approvedPendingSum = rawTxs
+      .filter((t) => t.kind === "expense" && !t.paid && (t.approval_status ?? "approved") === "approved")
+      .reduce((s, t) => s + Number(t.amount), 0);
+    const awaitingApprovalSum = rawTxs
+      .filter((t) => t.kind === "expense" && !t.paid && t.approval_status === "pending_approval")
+      .reduce((s, t) => s + Number(t.amount), 0);
+
+    // Filtrera bort attest-fakturor från prognosen om användaren inte vill räkna med dem.
+    const forecastInput = includePending
+      ? rawTxs
+      : rawTxs.filter((t) => (t.approval_status ?? "approved") !== "pending_approval");
+
     const transactions = [
-      ...((txRes.data ?? []) as Tx[]),
+      ...forecastInput,
       ...computeTaxEvents(country as "SE" | "NO" | "GB" | "US"),
     ].sort((a, b) => a.due_date.localeCompare(b.due_date));
 
@@ -38,6 +54,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
       30,
     );
     const suggestions = computeSuggestions(forecast, transactions);
+
 
     // Fire-and-forget: skicka mejlvarning om saldot bryter gränsen (throttlat per breach-datum)
     if (forecast.breachDate) {
