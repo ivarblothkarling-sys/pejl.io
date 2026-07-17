@@ -44,6 +44,7 @@ import {
 } from "@/lib/api/finance.functions";
 import { createShareLink } from "@/lib/api/share.functions";
 import { disconnectFortnox, getFortnoxAuthUrl, getFortnoxStatus, syncFortnox } from "@/lib/api/fortnox.functions";
+import { disconnectTink, getTinkAuthUrl, getTinkStatus, syncTink } from "@/lib/api/tink.functions";
 
 import logo from "@/assets/pejl-logo.png";
 
@@ -62,6 +63,17 @@ const getFortnoxRedirectUri = () =>
   typeof window !== "undefined"
     ? `${window.location.origin}/auth/fortnox/callback`
     : "https://pejl.io/auth/fortnox/callback";
+const getTinkRedirectUri = () =>
+  typeof window !== "undefined"
+    ? `${window.location.origin}/auth/tink/callback`
+    : "https://pejl.io/auth/tink/callback";
+
+type TinkStatus = {
+  connected: boolean;
+  bankBalance: number | null;
+  bankCurrency: string | null;
+  lastSyncedAt: string | null;
+};
 
 function DashboardPage() {
   const navigate = useNavigate();
@@ -90,6 +102,19 @@ function DashboardPage() {
       params: Array.from(url.searchParams.entries()),
     };
   }, [fortnoxAuthUrl]);
+
+  const [tinkStatus, setTinkStatus] = useState<TinkStatus | null>(null);
+  const [tinkAuthUrl, setTinkAuthUrl] = useState<string | null>(null);
+  const [tinkLoading, setTinkLoading] = useState(false);
+  const [tinkSyncing, setTinkSyncing] = useState(false);
+  const tinkForm = useMemo(() => {
+    if (!tinkAuthUrl) return null;
+    const url = new URL(tinkAuthUrl);
+    return {
+      action: `${url.origin}${url.pathname}`,
+      params: Array.from(url.searchParams.entries()),
+    };
+  }, [tinkAuthUrl]);
 
 
 
@@ -142,7 +167,26 @@ function DashboardPage() {
         url.searchParams.delete("fortnox");
         window.history.replaceState({}, "", url.toString());
       }
+      if (params.get("tink") === "connected") {
+        toast.success("Bank ansluten");
+        const url = new URL(window.location.href);
+        url.searchParams.delete("tink");
+        window.history.replaceState({}, "", url.toString());
+      }
     } catch {}
+
+    getTinkStatus()
+      .then((s) => {
+        setTinkStatus(s);
+        if (!s.connected) {
+          setTinkLoading(true);
+          getTinkAuthUrl({ data: { redirectUri: getTinkRedirectUri() } })
+            .then(({ url }) => setTinkAuthUrl(url))
+            .catch((err) => console.error("[Tink] Kunde inte förbereda OAuth-URL:", err))
+            .finally(() => setTinkLoading(false));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleConnectFortnox = async () => {
@@ -175,6 +219,36 @@ function DashboardPage() {
       await refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Kunde inte koppla bort Fortnox");
+    }
+  };
+
+  const syncTinkFn = useServerFn(syncTink);
+  const disconnectTinkFn = useServerFn(disconnectTink);
+
+  const handleSyncTink = async () => {
+    setTinkSyncing(true);
+    try {
+      const result = await syncTinkFn();
+      const s = await getTinkStatus();
+      setTinkStatus(s);
+      toast.success(
+        `Banksaldo uppdaterat: ${formatSEK(result.balance)}${result.currency ? " " + result.currency : ""}`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte synka bank");
+    } finally {
+      setTinkSyncing(false);
+    }
+  };
+
+  const handleDisconnectTink = async () => {
+    if (!confirm("Koppla bort banken?")) return;
+    try {
+      await disconnectTinkFn();
+      setTinkStatus({ connected: false, bankBalance: null, bankCurrency: null, lastSyncedAt: null });
+      toast.success("Bank bortkopplad.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte koppla bort banken");
     }
   };
 
@@ -451,7 +525,20 @@ function DashboardPage() {
 
         {/* KPI row */}
         <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KpiCard icon={<Wallet className="size-4" />} label="Dagens saldo" value={<CountUp value={forecast.startBalance} duration={800} />} />
+          <KpiCard
+            icon={<Wallet className="size-4" />}
+            label={tinkStatus?.connected && tinkStatus.bankBalance != null ? "Banksaldo (idag)" : "Dagens saldo"}
+            value={
+              tinkStatus?.connected && tinkStatus.bankBalance != null
+                ? <CountUp value={tinkStatus.bankBalance} duration={800} />
+                : <CountUp value={forecast.startBalance} duration={800} />
+            }
+            sub={
+              tinkStatus?.connected && tinkStatus.bankBalance != null
+                ? `Fortnox: ${formatSEK(forecast.startBalance)}`
+                : undefined
+            }
+          />
           <KpiCard
             icon={forecast.endBalance >= forecast.startBalance ? <TrendingUp className="size-4 text-success" /> : <TrendingDown className="size-4 text-destructive" />}
             label="Om 30 dagar"
@@ -477,6 +564,18 @@ function DashboardPage() {
             }
           />
         </section>
+
+        {tinkStatus?.connected && tinkStatus.bankBalance != null &&
+          Math.abs(tinkStatus.bankBalance - forecast.startBalance) > 100 && (
+          <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 flex items-start gap-3">
+            <AlertTriangle className="size-5 text-amber-500 shrink-0 mt-0.5" />
+            <div className="text-sm text-foreground">
+              Ditt Fortnox-saldo visar <strong>{formatSEK(forecast.startBalance)}</strong> men bankkontot visar{" "}
+              <strong>{formatSEK(tinkStatus.bankBalance)}</strong>. Avvikelsen beror troligen på obetalda fakturor.
+            </div>
+          </div>
+        )}
+
 
         <div className="flex flex-wrap items-center gap-3 -mt-2">
           {fortnoxConnected ? (
@@ -515,6 +614,39 @@ function DashboardPage() {
             <Button variant="default" size="sm" disabled>
               <Link2 className="size-4" />
               {fortnoxLoading ? "Förbereder Fortnox…" : "Koppla Fortnox"}
+            </Button>
+          )}
+          {tinkStatus?.connected ? (
+            <>
+              <span className="inline-flex items-center gap-2 text-sm font-medium text-success bg-success/10 border border-success/30 rounded-full px-3 py-1.5">
+                <Landmark className="size-4" /> Bank ansluten
+              </span>
+              <Button variant="outline" size="sm" onClick={handleSyncTink} disabled={tinkSyncing}>
+                {tinkSyncing ? "Synkar…" : "Synka bank"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDisconnectTink}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                Koppla bort bank
+              </Button>
+            </>
+          ) : tinkForm ? (
+            <form action={tinkForm.action} method="GET" target="_top">
+              {tinkForm.params.map(([name, value]) => (
+                <input key={name} type="hidden" name={name} value={value} />
+              ))}
+              <Button type="submit" variant="outline" size="sm">
+                <Landmark className="size-4" />
+                Koppla bank
+              </Button>
+            </form>
+          ) : (
+            <Button variant="outline" size="sm" disabled>
+              <Landmark className="size-4" />
+              {tinkLoading ? "Förbereder bank…" : "Koppla bank"}
             </Button>
           )}
           <Button

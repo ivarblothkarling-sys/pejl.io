@@ -200,6 +200,48 @@ export type Database = {
         }
         Relationships: []
       }
+      tink_connections: {
+        Row: {
+          access_token: string
+          bank_balance: number | null
+          bank_currency: string | null
+          created_at: string
+          expires_at: string | null
+          id: string
+          last_synced_at: string | null
+          refresh_token: string | null
+          scope: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token: string
+          bank_balance?: number | null
+          bank_currency?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          last_synced_at?: string | null
+          refresh_token?: string | null
+          scope?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string
+          bank_balance?: number | null
+          bank_currency?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          last_synced_at?: string | null
+          refresh_token?: string | null
+          scope?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       transactions: {
         Row: {
           amount: number

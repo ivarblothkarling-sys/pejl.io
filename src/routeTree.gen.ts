@@ -19,6 +19,7 @@ import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authentic
 import { Route as AuthenticatedInstallningarRouteImport } from './routes/_authenticated/installningar'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedByraRouteImport } from './routes/_authenticated/byra'
+import { Route as AuthTinkCallbackRouteImport } from './routes/auth.tink.callback'
 import { Route as AuthFortnoxCallbackRouteImport } from './routes/auth.fortnox.callback'
 
 const IntegritetspolicyRoute = IntegritetspolicyRouteImport.update({
@@ -71,6 +72,11 @@ const AuthenticatedByraRoute = AuthenticatedByraRouteImport.update({
   path: '/byra',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthTinkCallbackRoute = AuthTinkCallbackRouteImport.update({
+  id: '/tink/callback',
+  path: '/tink/callback',
+  getParentRoute: () => AuthRoute,
+} as any)
 const AuthFortnoxCallbackRoute = AuthFortnoxCallbackRouteImport.update({
   id: '/fortnox/callback',
   path: '/fortnox/callback',
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/api/chat': typeof ApiChatRoute
   '/share/$token': typeof ShareTokenRoute
   '/auth/fortnox/callback': typeof AuthFortnoxCallbackRoute
+  '/auth/tink/callback': typeof AuthTinkCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -100,6 +107,7 @@ export interface FileRoutesByTo {
   '/api/chat': typeof ApiChatRoute
   '/share/$token': typeof ShareTokenRoute
   '/auth/fortnox/callback': typeof AuthFortnoxCallbackRoute
+  '/auth/tink/callback': typeof AuthTinkCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -114,6 +122,7 @@ export interface FileRoutesById {
   '/api/chat': typeof ApiChatRoute
   '/share/$token': typeof ShareTokenRoute
   '/auth/fortnox/callback': typeof AuthFortnoxCallbackRoute
+  '/auth/tink/callback': typeof AuthTinkCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -128,6 +137,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/share/$token'
     | '/auth/fortnox/callback'
+    | '/auth/tink/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/share/$token'
     | '/auth/fortnox/callback'
+    | '/auth/tink/callback'
   id:
     | '__root__'
     | '/'
@@ -153,6 +164,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/share/$token'
     | '/auth/fortnox/callback'
+    | '/auth/tink/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -236,6 +248,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedByraRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/auth/tink/callback': {
+      id: '/auth/tink/callback'
+      path: '/tink/callback'
+      fullPath: '/auth/tink/callback'
+      preLoaderRoute: typeof AuthTinkCallbackRouteImport
+      parentRoute: typeof AuthRoute
+    }
     '/auth/fortnox/callback': {
       id: '/auth/fortnox/callback'
       path: '/fortnox/callback'
@@ -265,10 +284,12 @@ const AuthenticatedRouteRouteWithChildren =
 
 interface AuthRouteChildren {
   AuthFortnoxCallbackRoute: typeof AuthFortnoxCallbackRoute
+  AuthTinkCallbackRoute: typeof AuthTinkCallbackRoute
 }
 
 const AuthRouteChildren: AuthRouteChildren = {
   AuthFortnoxCallbackRoute: AuthFortnoxCallbackRoute,
+  AuthTinkCallbackRoute: AuthTinkCallbackRoute,
 }
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
@@ -284,13 +305,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
