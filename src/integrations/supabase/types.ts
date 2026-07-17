@@ -122,6 +122,7 @@ export type Database = {
           currency: string
           current_balance: number
           id: string
+          include_pending_in_forecast: boolean
           language: string
           last_low_balance_alert_at: string | null
           last_low_balance_alert_key: string | null
@@ -137,6 +138,7 @@ export type Database = {
           currency?: string
           current_balance?: number
           id: string
+          include_pending_in_forecast?: boolean
           language?: string
           last_low_balance_alert_at?: string | null
           last_low_balance_alert_key?: string | null
@@ -152,6 +154,7 @@ export type Database = {
           currency?: string
           current_balance?: number
           id?: string
+          include_pending_in_forecast?: boolean
           language?: string
           last_low_balance_alert_at?: string | null
           last_low_balance_alert_key?: string | null
@@ -245,6 +248,7 @@ export type Database = {
       transactions: {
         Row: {
           amount: number
+          approval_status: string
           created_at: string
           description: string
           due_date: string
@@ -256,6 +260,7 @@ export type Database = {
         }
         Insert: {
           amount: number
+          approval_status?: string
           created_at?: string
           description: string
           due_date: string
@@ -267,6 +272,7 @@ export type Database = {
         }
         Update: {
           amount?: number
+          approval_status?: string
           created_at?: string
           description?: string
           due_date?: string
