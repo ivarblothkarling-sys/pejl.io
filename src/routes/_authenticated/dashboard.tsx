@@ -222,6 +222,36 @@ function DashboardPage() {
     }
   };
 
+  const syncTinkFn = useServerFn(syncTink);
+  const disconnectTinkFn = useServerFn(disconnectTink);
+
+  const handleSyncTink = async () => {
+    setTinkSyncing(true);
+    try {
+      const result = await syncTinkFn();
+      const s = await getTinkStatus();
+      setTinkStatus(s);
+      toast.success(
+        `Banksaldo uppdaterat: ${formatSEK(result.balance)}${result.currency ? " " + result.currency : ""}`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte synka bank");
+    } finally {
+      setTinkSyncing(false);
+    }
+  };
+
+  const handleDisconnectTink = async () => {
+    if (!confirm("Koppla bort banken?")) return;
+    try {
+      await disconnectTinkFn();
+      setTinkStatus({ connected: false, bankBalance: null, bankCurrency: null, lastSyncedAt: null });
+      toast.success("Bank bortkopplad.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte koppla bort banken");
+    }
+  };
+
   const generateSummaryFn = useServerFn(generateWeeklySummary);
   const handleWeeklySummary = async () => {
     setSummaryLoading(true);
