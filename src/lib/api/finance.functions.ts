@@ -86,7 +86,27 @@ export const getDashboardData = createServerFn({ method: "GET" })
       }
     }
 
-    return { profile, transactions, forecast, suggestions };
+    return {
+      profile,
+      transactions,
+      forecast,
+      suggestions,
+      approvedPendingSum,
+      awaitingApprovalSum,
+      includePendingInForecast: includePending,
+    };
+  });
+
+export const updatePendingApprovalPreference = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ include: z.boolean() }))
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase
+      .from("profiles")
+      .update({ include_pending_in_forecast: data.include, updated_at: new Date().toISOString() })
+      .eq("id", context.userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 
