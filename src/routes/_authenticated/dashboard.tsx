@@ -525,7 +525,20 @@ function DashboardPage() {
 
         {/* KPI row */}
         <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KpiCard icon={<Wallet className="size-4" />} label="Dagens saldo" value={<CountUp value={forecast.startBalance} duration={800} />} />
+          <KpiCard
+            icon={<Wallet className="size-4" />}
+            label={tinkStatus?.connected && tinkStatus.bankBalance != null ? "Banksaldo (idag)" : "Dagens saldo"}
+            value={
+              tinkStatus?.connected && tinkStatus.bankBalance != null
+                ? <CountUp value={tinkStatus.bankBalance} duration={800} />
+                : <CountUp value={forecast.startBalance} duration={800} />
+            }
+            sub={
+              tinkStatus?.connected && tinkStatus.bankBalance != null
+                ? `Fortnox: ${formatSEK(forecast.startBalance)}`
+                : undefined
+            }
+          />
           <KpiCard
             icon={forecast.endBalance >= forecast.startBalance ? <TrendingUp className="size-4 text-success" /> : <TrendingDown className="size-4 text-destructive" />}
             label="Om 30 dagar"
