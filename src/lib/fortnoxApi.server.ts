@@ -137,6 +137,8 @@ interface FortnoxSupplierInvoiceListItem {
   DueDate?: string;
   Cancelled?: boolean;
   FinalPayDate?: string | null;
+  Booked?: boolean;
+  AuthorizerName?: string | null;
 }
 interface FortnoxSupplierInvoicesResponse {
   SupplierInvoices?: FortnoxSupplierInvoiceListItem[];
