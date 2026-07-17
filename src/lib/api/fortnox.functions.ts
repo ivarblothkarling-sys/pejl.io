@@ -36,6 +36,7 @@ async function syncFortnoxForUser(userId: string) {
       description: t.description,
       paid: false,
       source: "fortnox",
+      approval_status: t.approvalStatus ?? "approved",
     }));
     const { error: insErr } = await supabaseAdmin.from("transactions").insert(rows);
     if (insErr) throw new Error(insErr.message);

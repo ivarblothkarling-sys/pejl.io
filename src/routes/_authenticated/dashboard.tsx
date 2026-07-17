@@ -40,6 +40,7 @@ import { computeForecast, computeSuggestions, formatDateSv, formatSEK, type Tx }
 import {
   generateWeeklySummary,
   getDashboardData,
+  updatePendingApprovalPreference,
   updateThreshold,
 } from "@/lib/api/finance.functions";
 import { createShareLink } from "@/lib/api/share.functions";
@@ -575,6 +576,46 @@ function DashboardPage() {
             </div>
           </div>
         )}
+
+        {(data.awaitingApprovalSum > 0 || data.approvedPendingSum > 0) && (
+          <div className="rounded-2xl border border-border bg-card p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm">
+              <div className="font-medium text-foreground">
+                Du har {formatSEK(data.approvedPendingSum)} i godkända fakturor och{" "}
+                {formatSEK(data.awaitingApprovalSum)} som väntar på attest.
+              </div>
+              {data.awaitingApprovalSum > 0 && (
+                <div className="text-muted-foreground text-xs mt-1">
+                  {data.includePendingInForecast
+                    ? "Attest-fakturor räknas just nu med i prognosen."
+                    : "Attest-fakturor räknas inte med i prognosen — bara godkända fakturor är bekräftade utgifter."}
+                </div>
+              )}
+            </div>
+            {data.awaitingApprovalSum > 0 && (
+              <Button
+                variant={data.includePendingInForecast ? "outline" : "default"}
+                size="sm"
+                onClick={async () => {
+                  try {
+                    await updatePendingApprovalPreference({ data: { include: !data.includePendingInForecast } });
+                    await refresh();
+                    toast.success(
+                      !data.includePendingInForecast
+                        ? "Attest-fakturor inkluderas nu i prognosen."
+                        : "Attest-fakturor räknas inte längre med.",
+                    );
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "Kunde inte uppdatera inställning");
+                  }
+                }}
+              >
+                {data.includePendingInForecast ? "Ta bort från prognos" : "Inkludera i prognos"}
+              </Button>
+            )}
+          </div>
+        )}
+
 
 
         <div className="flex flex-wrap items-center gap-3 -mt-2">

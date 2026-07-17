@@ -6,7 +6,9 @@ export type Tx = {
   description: string;
   paid: boolean;
   category?: "tax" | "regular";
+  approval_status?: "approved" | "pending_approval";
 };
+
 
 
 export type ForecastPoint = {
