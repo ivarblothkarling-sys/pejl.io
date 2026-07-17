@@ -167,7 +167,26 @@ function DashboardPage() {
         url.searchParams.delete("fortnox");
         window.history.replaceState({}, "", url.toString());
       }
+      if (params.get("tink") === "connected") {
+        toast.success("Bank ansluten");
+        const url = new URL(window.location.href);
+        url.searchParams.delete("tink");
+        window.history.replaceState({}, "", url.toString());
+      }
     } catch {}
+
+    getTinkStatus()
+      .then((s) => {
+        setTinkStatus(s);
+        if (!s.connected) {
+          setTinkLoading(true);
+          getTinkAuthUrl({ data: { redirectUri: getTinkRedirectUri() } })
+            .then(({ url }) => setTinkAuthUrl(url))
+            .catch((err) => console.error("[Tink] Kunde inte förbereda OAuth-URL:", err))
+            .finally(() => setTinkLoading(false));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleConnectFortnox = async () => {
