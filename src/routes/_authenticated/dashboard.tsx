@@ -40,6 +40,7 @@ import { computeForecast, computeSuggestions, formatDateSv, formatSEK, type Tx }
 import {
   generateWeeklySummary,
   getDashboardData,
+  updatePendingApprovalPreference,
   updateThreshold,
 } from "@/lib/api/finance.functions";
 import { createShareLink } from "@/lib/api/share.functions";
