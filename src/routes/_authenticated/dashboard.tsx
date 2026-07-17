@@ -565,6 +565,18 @@ function DashboardPage() {
           />
         </section>
 
+        {tinkStatus?.connected && tinkStatus.bankBalance != null &&
+          Math.abs(tinkStatus.bankBalance - forecast.startBalance) > 100 && (
+          <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 flex items-start gap-3">
+            <AlertTriangle className="size-5 text-amber-500 shrink-0 mt-0.5" />
+            <div className="text-sm text-foreground">
+              Ditt Fortnox-saldo visar <strong>{formatSEK(forecast.startBalance)}</strong> men bankkontot visar{" "}
+              <strong>{formatSEK(tinkStatus.bankBalance)}</strong>. Avvikelsen beror troligen på obetalda fakturor.
+            </div>
+          </div>
+        )}
+
+
         <div className="flex flex-wrap items-center gap-3 -mt-2">
           {fortnoxConnected ? (
             <>
