@@ -103,6 +103,19 @@ function DashboardPage() {
     };
   }, [fortnoxAuthUrl]);
 
+  const [tinkStatus, setTinkStatus] = useState<TinkStatus | null>(null);
+  const [tinkAuthUrl, setTinkAuthUrl] = useState<string | null>(null);
+  const [tinkLoading, setTinkLoading] = useState(false);
+  const [tinkSyncing, setTinkSyncing] = useState(false);
+  const tinkForm = useMemo(() => {
+    if (!tinkAuthUrl) return null;
+    const url = new URL(tinkAuthUrl);
+    return {
+      action: `${url.origin}${url.pathname}`,
+      params: Array.from(url.searchParams.entries()),
+    };
+  }, [tinkAuthUrl]);
+
 
 
 
