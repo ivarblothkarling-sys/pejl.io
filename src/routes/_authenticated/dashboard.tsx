@@ -108,14 +108,8 @@ function DashboardPage() {
   const [tinkAuthUrl, setTinkAuthUrl] = useState<string | null>(null);
   const [tinkLoading, setTinkLoading] = useState(false);
   const [tinkSyncing, setTinkSyncing] = useState(false);
-  const tinkForm = useMemo(() => {
-    if (!tinkAuthUrl) return null;
-    const url = new URL(tinkAuthUrl);
-    return {
-      action: `${url.origin}${url.pathname}`,
-      params: Array.from(url.searchParams.entries()),
-    };
-  }, [tinkAuthUrl]);
+
+
 
 
 
@@ -183,12 +177,40 @@ function DashboardPage() {
           setTinkLoading(true);
           getTinkAuthUrl({ data: { redirectUri: getTinkRedirectUri() } })
             .then(({ url }) => setTinkAuthUrl(url))
-            .catch((err) => console.error("[Tink] Kunde inte förbereda OAuth-URL:", err))
+            .catch((err) => {
+              console.error("[Tink] Kunde inte förbereda OAuth-URL:", err);
+              toast.error(err instanceof Error ? err.message : "Kunde inte förbereda bank-koppling");
+            })
             .finally(() => setTinkLoading(false));
         }
       })
       .catch(() => {});
   }, []);
+
+  const handleConnectTink = async () => {
+    console.log("[Tink] Koppla bank-knapp klickad. redirectUri =", getTinkRedirectUri());
+    try {
+      let url = tinkAuthUrl;
+      if (!url) {
+        setTinkLoading(true);
+        const res = await getTinkAuthUrl({ data: { redirectUri: getTinkRedirectUri() } });
+        url = res.url;
+        setTinkAuthUrl(url);
+      }
+      console.log("[Tink] Navigerar till:", url);
+      if (window.top) {
+        window.top.location.href = url;
+      } else {
+        window.location.href = url;
+      }
+    } catch (err) {
+      console.error("[Tink] Fel vid koppling:", err);
+      toast.error(err instanceof Error ? err.message : "Kunde inte starta bank-koppling. Kontrollera att TINK_CLIENT_ID är satt.");
+    } finally {
+      setTinkLoading(false);
+    }
+  };
+
 
   const handleConnectFortnox = async () => {
     console.log("[Fortnox] Koppla-knapp klickad. redirectUri =", getFortnoxRedirectUri());
@@ -674,22 +696,19 @@ function DashboardPage() {
                 Koppla bort bank
               </Button>
             </>
-          ) : tinkForm ? (
-            <form action={tinkForm.action} method="GET" target="_top">
-              {tinkForm.params.map(([name, value]) => (
-                <input key={name} type="hidden" name={name} value={value} />
-              ))}
-              <Button type="submit" variant="outline" size="sm">
-                <Landmark className="size-4" />
-                Koppla bank
-              </Button>
-            </form>
           ) : (
-            <Button variant="outline" size="sm" disabled>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleConnectTink}
+              disabled={tinkLoading}
+            >
               <Landmark className="size-4" />
               {tinkLoading ? "Förbereder bank…" : "Koppla bank"}
             </Button>
           )}
+
           <Button
             variant="outline"
             size="sm"
