@@ -183,12 +183,40 @@ function DashboardPage() {
           setTinkLoading(true);
           getTinkAuthUrl({ data: { redirectUri: getTinkRedirectUri() } })
             .then(({ url }) => setTinkAuthUrl(url))
-            .catch((err) => console.error("[Tink] Kunde inte förbereda OAuth-URL:", err))
+            .catch((err) => {
+              console.error("[Tink] Kunde inte förbereda OAuth-URL:", err);
+              toast.error(err instanceof Error ? err.message : "Kunde inte förbereda bank-koppling");
+            })
             .finally(() => setTinkLoading(false));
         }
       })
       .catch(() => {});
   }, []);
+
+  const handleConnectTink = async () => {
+    console.log("[Tink] Koppla bank-knapp klickad. redirectUri =", getTinkRedirectUri());
+    try {
+      let url = tinkAuthUrl;
+      if (!url) {
+        setTinkLoading(true);
+        const res = await getTinkAuthUrl({ data: { redirectUri: getTinkRedirectUri() } });
+        url = res.url;
+        setTinkAuthUrl(url);
+      }
+      console.log("[Tink] Navigerar till:", url);
+      if (window.top) {
+        window.top.location.href = url;
+      } else {
+        window.location.href = url;
+      }
+    } catch (err) {
+      console.error("[Tink] Fel vid koppling:", err);
+      toast.error(err instanceof Error ? err.message : "Kunde inte starta bank-koppling. Kontrollera att TINK_CLIENT_ID är satt.");
+    } finally {
+      setTinkLoading(false);
+    }
+  };
+
 
   const handleConnectFortnox = async () => {
     console.log("[Fortnox] Koppla-knapp klickad. redirectUri =", getFortnoxRedirectUri());
