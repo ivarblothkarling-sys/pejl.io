@@ -702,22 +702,19 @@ function DashboardPage() {
                 Koppla bort bank
               </Button>
             </>
-          ) : tinkForm ? (
-            <form action={tinkForm.action} method="GET" target="_top">
-              {tinkForm.params.map(([name, value]) => (
-                <input key={name} type="hidden" name={name} value={value} />
-              ))}
-              <Button type="submit" variant="outline" size="sm">
-                <Landmark className="size-4" />
-                Koppla bank
-              </Button>
-            </form>
           ) : (
-            <Button variant="outline" size="sm" disabled>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleConnectTink}
+              disabled={tinkLoading}
+            >
               <Landmark className="size-4" />
               {tinkLoading ? "Förbereder bank…" : "Koppla bank"}
             </Button>
           )}
+
           <Button
             variant="outline"
             size="sm"
