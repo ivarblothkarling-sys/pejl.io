@@ -36,7 +36,7 @@ async function syncTinkForUser(userId: string) {
 export const getTinkAuthUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { redirectUri?: string } | undefined) => input ?? {})
-  .handler(async ({ data, context }) => {
+  .handler(async ({ context }) => {
     const clientId = process.env.TINK_CLIENT_ID;
     const clientSecret = process.env.TINK_CLIENT_SECRET;
     if (!clientId || !clientSecret)
@@ -44,7 +44,7 @@ export const getTinkAuthUrl = createServerFn({ method: "POST" })
 
     const { createTinkState } = await import("@/lib/tinkState.server");
     const state = createTinkState(context.userId, clientSecret);
-    const redirectUri = process.env.TINK_REDIRECT_URI ?? TINK_REDIRECT_URI;
+    const redirectUri = TINK_REDIRECT_URI;
 
     const params = new URLSearchParams({
       client_id: clientId,
@@ -99,7 +99,7 @@ export const exchangeTinkCode = createServerFn({ method: "POST" })
       data.code,
       clientId,
       clientSecret,
-      data.redirectUri ?? process.env.TINK_REDIRECT_URI ?? TINK_REDIRECT_URI,
+      TINK_REDIRECT_URI,
     );
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
