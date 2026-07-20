@@ -44,7 +44,9 @@ export async function refreshFortnoxTokens(
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Fortnox refresh misslyckades: ${res.status} ${text}`);
+    const err = new Error(`Fortnox refresh misslyckades: ${res.status} ${text}`) as Error & { invalidGrant?: boolean };
+    if (res.status === 400 && text.includes("invalid_grant")) err.invalidGrant = true;
+    throw err;
   }
   const json = (await res.json()) as {
     access_token: string;
