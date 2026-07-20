@@ -170,42 +170,40 @@ function DashboardPage() {
       }
     } catch {}
 
-    getTinkStatus()
-      .then((s) => {
-        setTinkStatus(s);
-        if (!s.connected) {
-          setTinkLoading(true);
-          getTinkAuthUrl({ data: { redirectUri: getTinkRedirectUri() } })
-            .then(({ url }) => setTinkAuthUrl(url))
-            .catch((err) => {
-              console.error("[Tink] Kunde inte förbereda OAuth-URL:", err);
-              toast.error(err instanceof Error ? err.message : "Kunde inte förbereda bank-koppling");
-            })
-            .finally(() => setTinkLoading(false));
-        }
-      })
+    getTinkStatusFn()
+      .then((s) => setTinkStatus(s))
       .catch(() => {});
   }, []);
 
+  const getTinkAuthUrlFn = useServerFn(getTinkAuthUrl);
+
   const handleConnectTink = async () => {
-    console.log("[Tink] Koppla bank-knapp klickad. redirectUri =", getTinkRedirectUri());
+    const redirectUri = getTinkRedirectUri();
+    console.log("[Tink] Koppla bank-knapp klickad. redirectUri =", redirectUri);
+    setTinkLoading(true);
     try {
-      let url = tinkAuthUrl;
-      if (!url) {
-        setTinkLoading(true);
-        const res = await getTinkAuthUrl({ data: { redirectUri: getTinkRedirectUri() } });
-        url = res.url;
-        setTinkAuthUrl(url);
-      }
+      const res = await getTinkAuthUrlFn({ data: { redirectUri } });
+      const url = res.url;
+      setTinkAuthUrl(url);
       console.log("[Tink] Navigerar till:", url);
-      if (window.top) {
-        window.top.location.href = url;
-      } else {
-        window.location.href = url;
+      try {
+        if (window.top && window.top !== window.self) {
+          window.top.location.href = url;
+        } else {
+          window.location.href = url;
+        }
+      } catch (navErr) {
+        console.warn("[Tink] top-navigation blockerad, öppnar i ny flik:", navErr);
+        window.open(url, "_blank", "noopener,noreferrer");
       }
     } catch (err) {
       console.error("[Tink] Fel vid koppling:", err);
-      toast.error(err instanceof Error ? err.message : "Kunde inte starta bank-koppling. Kontrollera att TINK_CLIENT_ID är satt.");
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(
+        msg.includes("TINK_CLIENT")
+          ? "TINK_CLIENT_ID/TINK_CLIENT_SECRET saknas på servern. Lägg till dem i secrets."
+          : msg || "Kunde inte starta bank-koppling.",
+      );
     } finally {
       setTinkLoading(false);
     }
