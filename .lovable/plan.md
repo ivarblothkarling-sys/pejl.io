@@ -1,84 +1,79 @@
-## Mål
-Förbereda Pejl för global expansion genom att införa ett provider-agnostiskt abstraktionslager, konfigurerbar valuta/språk/land, och multi-provider settings-UI — utan att bryta nuvarande Fortnox-flöde (som idag är mockdata).
+# Backoffice för Lucas
 
-## 1. Abstraktionslager – `src/lib/accounting/`
+Fyra leveranser så Lucas kan klona, köra lokalt och drifta Pejl.
 
+## 1. Teknisk README + setup-guide
+
+Ersätter/utökar rot-`README.md` med:
+- Stack-översikt: TanStack Start (React 19 + Vite 7) på Cloudflare Workers, Supabase (Lovable Cloud), Tailwind v4.
+- Kör lokalt: `bun install` → `bun run dev` → localhost:8080.
+- Filstruktur: `src/routes/` (file-based routing), `src/lib/api/*.functions.ts` (server functions), `src/lib/*.server.ts` (server-only), `src/integrations/supabase/` (auto-genererat — rör ej).
+- Miljövariabler: fullständig lista över alla secrets (LOVABLE_API_KEY, FORTNOX_*, TINK_*, RESEND_API_KEY, SUPABASE_*) med förklaring, källa och om de är public/server-only.
+- Databasmodell: kort översikt av alla 9 tabellerna + RLS-strategi (auth.uid()-scoped, `user_roles`/`has_role` för admin).
+- Integrationer: hur Fortnox OAuth, Tink OAuth, Resend, Lovable AI Gateway (Claude) fungerar — inkl. state-token HMAC-flödet, redirect_uri-hantering och `supabaseAdmin` vs `requireSupabaseAuth`.
+- Deploy: hur Lovable publicerar, hur push till GitHub synkar tillbaka, produktions-URL:er.
+- Vanliga fällor: `.server.ts` får inte importeras client-side, `supabaseAdmin` bara efter role-check, `redirect_uri` måste whitelistas hos Fortnox/Tink.
+
+Skapar även `docs/ARCHITECTURE.md` med djupare arkitekturbeskrivning + sekvensdiagram (ASCII) för OAuth-flödena och prognos-beräkningen.
+
+## 2. GitHub-koppling + access
+
+Kan inte kopplas åt dig automatiskt — GitHub-appen kräver din OAuth-godkänning. Levererar:
+- Skriftlig steg-för-steg-guide i README: Plus (+) → GitHub → Connect project → skapa repo → bjud in `tikkanenco` som collaborator på GitHub.com under Settings → Collaborators.
+- Förklaring av två-vägs-syncen (push till GitHub → syncar automatiskt till Lovable och tvärtom).
+- Rekommendation att Lucas jobbar i egen branch och mergar via PR för att undvika kollisioner med Lovable-editorn.
+
+## 3. Admin-panel i appen (`/admin`)
+
+Skyddad route bakom `has_role(user, 'admin')`. Överbyggnad på befintlig `user_roles`-tabell (rollen `admin` finns redan i enumen).
+
+Vyer:
+- **Översikt**: antal användare, antal aktiva Fortnox/Tink-kopplingar, antal transaktioner totalt, senaste 10 signups.
+- **Användare**: tabell med email, `company_name`, roll, `current_balance`, `threshold`, om Fortnox/Tink är kopplat, skapad, senaste sync. Sök på email.
+- **Användardetalj**: alla transaktioner för användaren, möjlighet att trigga manuell Fortnox/Tink-sync, växla admin/agency-roll, radera testdata.
+- **Systemhälsa**: senaste chattmeddelanden (för att debugga AI-svar), pending share_tokens, provider_waitlist-inlägg.
+
+Server functions i `src/lib/api/admin.functions.ts`:
+- `listUsers`, `getUserDetails`, `triggerUserSync`, `toggleUserRole`, `getSystemStats`.
+- Alla använder `requireSupabaseAuth` + verifierar admin-roll via `context.supabase.rpc('has_role', ...)` innan `supabaseAdmin` laddas in.
+
+Migration: Ger `ivarblothkarling@gmail.com` och `tikkanenco@gmail.com` admin-rollen så ni båda kommer åt panelen.
+
+Länk till `/admin` läggs till i dashboarden bara för admins (samma pattern som `/byra`).
+
+## 4. Connector- och secret-access checklista
+
+Skapar `docs/ACCESS.md` med exakt vad du (som workspace-owner) behöver göra för att Lucas ska kunna bygga och deploya:
+
+- **Lovable workspace**: bjud in tikkanenco@gmail.com till workspacet under Settings → People med rollen Editor eller Admin. Detta ger automatisk access till Lovable Cloud + Lovable AI Gateway.
+- **Resend connector**: dela access i Connectors → Resend → Permissions.
+- **Fortnox secrets**: FORTNOX_CLIENT_ID/SECRET är redan i Cloud → Secrets och nås av alla workspace-medlemmar automatiskt. Lägg till hans Lovable-domäner som redirect_uri i Fortnox Developer Portal.
+- **Tink secrets**: samma sak, plus lägga till redirect_uris i Tink Console (som redan är påbörjat).
+- **GitHub**: Lucas som collaborator på repot (från punkt 2).
+- **Domän**: om han ska deploya egen preview på pejl.io behöver DNS-access — annars kör han på Lovable-preview-URL:en.
+
+## Tekniska detaljer
+
+Filer som skapas/ändras:
 ```text
-src/lib/accounting/
-  types.ts                 // Invoice, SupplierInvoice, Transaction, CompanyInfo, AccountBalance
-  accountingService.ts     // provider-agnostiskt API (default: fortnox)
-  providers/
-    fortnox.ts             // nuvarande mock-baserad implementation
-    tripletex.ts           // stub (throw NotImplemented)
-    xero.ts                // stub
-    quickbooks.ts          // stub
+README.md                                    (skrivs om)
+docs/ARCHITECTURE.md                         (ny)
+docs/ACCESS.md                               (ny)
+src/routes/_authenticated/admin.tsx          (ny — översikt)
+src/routes/_authenticated/admin.users.tsx    (ny — användarlista)
+src/routes/_authenticated/admin.users.$id.tsx (ny — detalj)
+src/lib/api/admin.functions.ts               (ny)
+src/routes/_authenticated/dashboard.tsx      (patch — visa /admin-länk för admins)
+supabase migration                           (grant admin-roll till er två)
 ```
 
-`accountingService.ts` exponerar:
-- `getInvoices()`, `getSupplierInvoices()`, `getAccountBalance()`, `getTransactions()`, `getCompanyInfo()`
-- Väljer provider utifrån användarens `profiles.accounting_provider`.
+Ingen ändring i befintliga OAuth-flöden, prognoslogik eller AI-chatt.
 
-Nuvarande `finance.functions.ts` refaktoreras minimalt: dashboard-datat läses fortfarande via befintlig logik, men eventuella "hämta från Fortnox"-anrop går genom servicen. Ingen förändring av mockdata-innehåll.
+## Ordning
 
-## 2. Databasändringar (migration)
-Utöka `profiles` med:
-- `accounting_provider text not null default 'fortnox'`
-- `currency text not null default 'SEK'`
-- `country text not null default 'SE'`
-- `language text not null default 'sv'`
-
-Ny tabell `provider_waitlist(id, user_id, provider, created_at)` för "notify me"-knappen.
-
-## 3. Inställningssida – `/installningar`
-Route under `_authenticated`. Tre sektioner:
-- **Bokföringssystem**: 4 kort med flagga (🇸🇪🇳🇴🇬🇧🇺🇸), Fortnox valbar (kopplad), övriga disabled med "Kommer snart" + "Notifiera mig"-knapp (skriver till `provider_waitlist`).
-- **Valuta**: dropdown SEK/NOK/GBP/EUR/USD.
-- **Språk**: Svenska / English.
-
-## 4. Valuta & lokalisering – `src/lib/i18n/`
-- `formatCurrency(amount, currency)` — ersätter hårdkodad `kr`-suffix i dashboard och chatt.
-- `useUserLocale()` hook läser profil → returnerar `{ currency, language, country }`.
-- Alla `${x} kr`-strängar i dashboard, tax-sektion, chatt byts till `formatCurrency`.
-
-## 5. Skattelogik per land – `src/lib/tax.ts`
-Refaktor från hårdkodad SE-logik till lookup:
-
-```ts
-const TAX_RULES: Record<Country, TaxRule[]> = {
-  SE: [ { type: 'moms', rate: 0.25, dueDay: 26, label: 'Momsdeklaration' },
-        { type: 'employer', dueDay: 12, label: 'Arbetsgivaravgifter' },
-        { type: 'f-skatt', dueDay: 12, label: 'F-skatt' } ],
-  NO: [], // placeholder MVA
-  GB: [], // placeholder VAT
-  US: [], // placeholder Sales Tax
-};
-```
-`getUpcomingTaxes(country, ...)` väljer regelset. SE fortsätter fungera identiskt.
-
-## 6. Språkstöd – lätt i18n
-`src/lib/i18n/strings.ts` med `sv` (komplett) och `en` (komplett översättning av alla synliga UI-texter i dashboard, auth, settings, tax-sektion, integritetspolicy förblir sv). `useT()` hook: `t('dashboard.forecast_title')`.
-
-Fas 1: översätt dashboard, settings, tax-sektion, chatt-placeholders. Behåll svensk copy som default.
-
-## Filer som skapas
-- `src/lib/accounting/types.ts`
-- `src/lib/accounting/accountingService.ts`
-- `src/lib/accounting/providers/{fortnox,tripletex,xero,quickbooks}.ts`
-- `src/lib/i18n/{strings.ts,format.ts,useT.ts}`
-- `src/lib/api/settings.functions.ts` (updateProviderSettings, joinWaitlist)
-- `src/routes/_authenticated/installningar.tsx`
-- Migration för profiles + provider_waitlist
-
-## Filer som ändras
-- `src/lib/tax.ts` – multi-country lookup
-- `src/routes/_authenticated/index.tsx` – använd `formatCurrency` + `useT`
-- `src/routes/api/chat.ts` – valuta i system-prompt
-- Länk till `/installningar` från dashboard-header
-
-## Vad som INTE ändras
-- Fortnox-mockdata i `handle_new_user`
-- Design, färgpalett, komponentbibliotek
-- RLS-policies (endast utökade kolumner ärver befintlig policy på profiles)
-- Auth-flöde, share-länk, integritetspolicy
-
-Bekräfta så kör jag migrationen först, sedan koden.
+1. README + docs (snabbast, blockerar inget).
+2. Admin-migration + roll-grant.
+3. Admin-server functions.
+4. Admin-UI (3 routes).
+5. Dashboard-länk.
+6. Kort meddelande med exakta klick-steg för GitHub-koppling och Resend-access (kan inte automatiseras).

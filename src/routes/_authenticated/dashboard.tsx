@@ -92,6 +92,7 @@ function DashboardPage() {
   const [fortnoxLoading, setFortnoxLoading] = useState(false);
   const [fortnoxSyncing, setFortnoxSyncing] = useState(false);
   const [isAgency, setIsAgency] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
   const chatInjectRef = useRef<((text: string) => void) | null>(null);
 
   const [fortnoxAuthUrl, setFortnoxAuthUrl] = useState<string | null>(null);
@@ -134,6 +135,18 @@ function DashboardPage() {
 
   useEffect(() => {
     refresh();
+    (async () => {
+      const { data: sess } = await supabase.auth.getUser();
+      const uid = sess.user?.id;
+      if (!uid) return;
+      const { data: adminRow } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", uid)
+        .eq("role", "admin")
+        .maybeSingle();
+      setIsAdmin(!!adminRow);
+    })();
     getFortnoxStatus()
       .then((s) => {
         setFortnoxConnected(s.connected);
@@ -493,6 +506,13 @@ function DashboardPage() {
               <Link to="/byra">
                 <Button variant="ghost" size="sm" className="text-muted-foreground">
                   <Users className="size-4" /> Byråvy
+                </Button>
+              </Link>
+            )}
+            {isAdmin && (
+              <Link to="/admin">
+                <Button variant="ghost" size="sm" className="text-muted-foreground">
+                  <ShieldCheck className="size-4" /> Backoffice
                 </Button>
               </Link>
             )}
