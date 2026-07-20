@@ -92,6 +92,7 @@ function DashboardPage() {
   const [fortnoxLoading, setFortnoxLoading] = useState(false);
   const [fortnoxSyncing, setFortnoxSyncing] = useState(false);
   const [isAgency, setIsAgency] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
   const chatInjectRef = useRef<((text: string) => void) | null>(null);
 
   const [fortnoxAuthUrl, setFortnoxAuthUrl] = useState<string | null>(null);
