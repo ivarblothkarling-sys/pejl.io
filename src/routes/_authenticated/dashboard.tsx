@@ -135,6 +135,18 @@ function DashboardPage() {
 
   useEffect(() => {
     refresh();
+    (async () => {
+      const { data: sess } = await supabase.auth.getUser();
+      const uid = sess.user?.id;
+      if (!uid) return;
+      const { data: adminRow } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", uid)
+        .eq("role", "admin")
+        .maybeSingle();
+      setIsAdmin(!!adminRow);
+    })();
     getFortnoxStatus()
       .then((s) => {
         setFortnoxConnected(s.connected);
