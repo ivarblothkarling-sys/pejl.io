@@ -82,11 +82,19 @@ export async function ensureFreshFortnoxToken(
   if (stillValid) return conn.access_token;
 
   console.log("[Fortnox] Access-token utgånget — refreshar mot Fortnox.");
-  const fresh = await refreshFortnoxTokens(
-    conn.refresh_token,
-    clientId,
-    clientSecret,
-  );
+  let fresh: FortnoxTokens;
+  try {
+    fresh = await refreshFortnoxTokens(conn.refresh_token, clientId, clientSecret);
+  } catch (e) {
+    const err = e as Error & { invalidGrant?: boolean };
+    if (err.invalidGrant) {
+      console.warn("[Fortnox] Refresh-token ogiltigt — tar bort kopplingen.");
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin.from("fortnox_connections").delete().eq("user_id", conn.user_id);
+      throw new Error("Din Fortnox-koppling har gått ut. Koppla Fortnox igen från dashboarden.");
+    }
+    throw e;
+  }
 
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { error } = await supabaseAdmin
