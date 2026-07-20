@@ -65,9 +65,7 @@ const getFortnoxRedirectUri = () =>
     ? `${window.location.origin}/auth/fortnox/callback`
     : "https://pejl.io/auth/fortnox/callback";
 const getTinkRedirectUri = () =>
-  typeof window !== "undefined"
-    ? `${window.location.origin}/auth/tink/callback`
-    : "https://pejl.io/auth/tink/callback";
+  "https://pejl.io/auth/tink/callback";
 
 type TinkStatus = {
   connected: boolean;

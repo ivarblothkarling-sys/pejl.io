@@ -6,6 +6,8 @@ import { Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 import { exchangeTinkCode } from "@/lib/api/tink.functions";
 import { Button } from "@/components/ui/button";
 
+const TINK_REDIRECT_URI = "https://pejl.io/auth/tink/callback";
+
 export const Route = createFileRoute("/auth/tink/callback")({
   ssr: false,
   head: () => ({ meta: [{ title: "Ansluter bank — Pejl" }] }),
@@ -31,8 +33,7 @@ function TinkCallback() {
         const state = url.searchParams.get("state");
         if (!code) throw new Error("Ingen kod mottagen från Tink.");
         if (!state) throw new Error("Säkerhetskontrollen från Tink saknas. Starta kopplingen igen.");
-        const redirectUri = `${window.location.origin}/auth/tink/callback`;
-        await exchange({ data: { code, state, redirectUri } });
+        await exchange({ data: { code, state, redirectUri: TINK_REDIRECT_URI } });
         setStatus("ok");
         setMessage("Bank ansluten.");
         setTimeout(() => {

@@ -57,11 +57,13 @@ export async function exchangeTinkAuthCode(
   code: string,
   clientId: string,
   clientSecret: string,
+  redirectUri?: string,
 ): Promise<TinkTokens> {
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
   });
+  if (redirectUri) body.set("redirect_uri", redirectUri);
   return tinkTokenRequest(body, clientId, clientSecret);
 }
 

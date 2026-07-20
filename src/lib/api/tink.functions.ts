@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const TINK_SCOPES = "accounts:read,balances:read,transactions:read,user:read";
+const TINK_REDIRECT_URI = "https://pejl.io/auth/tink/callback";
 
 async function syncTinkForUser(userId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -35,7 +36,7 @@ async function syncTinkForUser(userId: string) {
 export const getTinkAuthUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { redirectUri?: string } | undefined) => input ?? {})
-  .handler(async ({ data, context }) => {
+  .handler(async ({ context }) => {
     const clientId = process.env.TINK_CLIENT_ID;
     const clientSecret = process.env.TINK_CLIENT_SECRET;
     if (!clientId || !clientSecret)
@@ -43,10 +44,7 @@ export const getTinkAuthUrl = createServerFn({ method: "POST" })
 
     const { createTinkState } = await import("@/lib/tinkState.server");
     const state = createTinkState(context.userId, clientSecret);
-    const redirectUri =
-      data?.redirectUri && /^https?:\/\//.test(data.redirectUri)
-        ? data.redirectUri
-        : (process.env.TINK_REDIRECT_URI ?? "https://pejl.io/auth/tink/callback");
+    const redirectUri = TINK_REDIRECT_URI;
 
     const params = new URLSearchParams({
       client_id: clientId,
@@ -97,7 +95,12 @@ export const exchangeTinkCode = createServerFn({ method: "POST" })
     const statePayload = verifyTinkState(data.state, clientSecret);
 
     const { exchangeTinkAuthCode } = await import("@/lib/tinkApi.server");
-    const tokens = await exchangeTinkAuthCode(data.code, clientId, clientSecret);
+    const tokens = await exchangeTinkAuthCode(
+      data.code,
+      clientId,
+      clientSecret,
+      TINK_REDIRECT_URI,
+    );
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("tink_connections").upsert(
