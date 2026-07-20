@@ -111,9 +111,7 @@ export const listAdminUsers = createServerFn({ method: "GET" })
       roleMap.set(r.user_id, list);
     }
 
-    // Räkna transaktioner per user (billig approx: en query)
-    const { data: txCounts } = await supabaseAdmin.rpc("noop_ignore_missing").select?.() ?? { data: null };
-    // Fallback: räkna via grupperad select
+    // Räkna transaktioner per user via in-memory-gruppering
     const { data: txRows } = await supabaseAdmin
       .from("transactions")
       .select("user_id");

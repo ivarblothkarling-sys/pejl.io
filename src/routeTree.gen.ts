@@ -19,6 +19,7 @@ import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authentic
 import { Route as AuthenticatedInstallningarRouteImport } from './routes/_authenticated/installningar'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedByraRouteImport } from './routes/_authenticated/byra'
+import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthTinkCallbackRouteImport } from './routes/auth.tink.callback'
 import { Route as AuthFortnoxCallbackRouteImport } from './routes/auth.fortnox.callback'
 
@@ -72,6 +73,11 @@ const AuthenticatedByraRoute = AuthenticatedByraRouteImport.update({
   path: '/byra',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthTinkCallbackRoute = AuthTinkCallbackRouteImport.update({
   id: '/tink/callback',
   path: '/tink/callback',
@@ -87,6 +93,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
   '/integritetspolicy': typeof IntegritetspolicyRoute
+  '/admin': typeof AuthenticatedAdminRoute
   '/byra': typeof AuthenticatedByraRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/installningar': typeof AuthenticatedInstallningarRoute
@@ -100,6 +107,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
   '/integritetspolicy': typeof IntegritetspolicyRoute
+  '/admin': typeof AuthenticatedAdminRoute
   '/byra': typeof AuthenticatedByraRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/installningar': typeof AuthenticatedInstallningarRoute
@@ -115,6 +123,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRouteWithChildren
   '/integritetspolicy': typeof IntegritetspolicyRoute
+  '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/byra': typeof AuthenticatedByraRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/installningar': typeof AuthenticatedInstallningarRoute
@@ -130,6 +139,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/integritetspolicy'
+    | '/admin'
     | '/byra'
     | '/dashboard'
     | '/installningar'
@@ -143,6 +153,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/integritetspolicy'
+    | '/admin'
     | '/byra'
     | '/dashboard'
     | '/installningar'
@@ -157,6 +168,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/integritetspolicy'
+    | '/_authenticated/admin'
     | '/_authenticated/byra'
     | '/_authenticated/dashboard'
     | '/_authenticated/installningar'
@@ -248,6 +260,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedByraRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/admin': {
+      id: '/_authenticated/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthenticatedAdminRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/auth/tink/callback': {
       id: '/auth/tink/callback'
       path: '/tink/callback'
@@ -266,6 +285,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedByraRoute: typeof AuthenticatedByraRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedInstallningarRoute: typeof AuthenticatedInstallningarRoute
@@ -273,6 +293,7 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedByraRoute: AuthenticatedByraRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedInstallningarRoute: AuthenticatedInstallningarRoute,
