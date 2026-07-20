@@ -170,7 +170,7 @@ function DashboardPage() {
       }
     } catch {}
 
-    getTinkStatusFn()
+    getTinkStatus()
       .then((s) => setTinkStatus(s))
       .catch(() => {});
   }, []);
