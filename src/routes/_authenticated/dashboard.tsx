@@ -509,6 +509,13 @@ function DashboardPage() {
                 </Button>
               </Link>
             )}
+            {isAdmin && (
+              <Link to="/admin">
+                <Button variant="ghost" size="sm" className="text-muted-foreground">
+                  <ShieldCheck className="size-4" /> Backoffice
+                </Button>
+              </Link>
+            )}
             <Link to="/installningar">
               <Button variant="ghost" size="sm" className="text-muted-foreground">
                 <SettingsIcon className="size-4" /> Inställningar
