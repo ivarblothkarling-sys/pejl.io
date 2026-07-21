@@ -35,7 +35,7 @@ export function computeForecast(
   startBalance: number,
   threshold: number,
   transactions: Tx[],
-  days = 14,
+  days = 30,
   fromDate: Date = new Date(),
 ): ForecastResult {
   const start = new Date(fromDate);
