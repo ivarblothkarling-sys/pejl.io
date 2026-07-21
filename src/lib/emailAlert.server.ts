@@ -1,8 +1,10 @@
-// Server-only helper: send low-balance alert emails via Resend gateway.
+// Server-only helper: send low-balance alert emails via Resend API.
+// Uses a shared RESEND_API_KEY env variable so emails work for all users,
+// independent of who owns the workspace connector.
 import { formatSEK } from "./forecast";
 import type { ForecastResult } from "./forecast";
 
-const GATEWAY_URL = "https://connector-gateway.lovable.dev/resend";
+const RESEND_URL = "https://api.resend.com/emails";
 const FROM = "Pejl <alerts@pejl.io>";
 
 export type LowBalanceEmailInput = {
@@ -12,10 +14,9 @@ export type LowBalanceEmailInput = {
 };
 
 export async function sendLowBalanceEmail({ to, companyName, forecast }: LowBalanceEmailInput) {
-  const lovableKey = process.env.LOVABLE_API_KEY;
   const resendKey = process.env.RESEND_API_KEY;
-  if (!lovableKey || !resendKey) {
-    console.error("[emailAlert] Missing LOVABLE_API_KEY or RESEND_API_KEY");
+  if (!resendKey) {
+    console.error("[emailAlert] Missing RESEND_API_KEY");
     return { ok: false as const, error: "missing_keys" };
   }
   if (!forecast.breachDate || forecast.breachAmount === null) {
