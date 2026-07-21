@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { ArrowRight, Check, Link2, Sparkles, ShieldAlert } from "lucide-react";
+import { ArrowRight, Check, ExternalLink, Link2, Sparkles, ShieldAlert, Receipt } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,13 +20,13 @@ export const Route = createFileRoute("/_authenticated/onboarding")({
   head: () => ({
     meta: [
       { title: "Kom igång — Pejl" },
-      { name: "description", content: "Tre steg för att komma igång med Pejl." },
+      { name: "description", content: "Fyra snabba steg för att komma igång med Pejl." },
     ],
   }),
   component: OnboardingPage,
 });
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
 
 function OnboardingPage() {
   const navigate = useNavigate();
@@ -35,9 +35,23 @@ function OnboardingPage() {
   const [companyName, setCompanyName] = useState("");
   const [fortnoxConnected, setFortnoxConnected] = useState(false);
   const [fortnoxAuthUrl, setFortnoxAuthUrl] = useState<string | null>(null);
+  const [checkingFortnox, setCheckingFortnox] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const completeFn = useServerFn(completeOnboarding);
+
+  const pollFortnox = async () => {
+    setCheckingFortnox(true);
+    try {
+      const s = await getFortnoxStatus();
+      setFortnoxConnected(s.connected);
+      if (!s.connected) toast.error("Ingen Fortnox-koppling hittades än. Kör kopplingen och försök igen.");
+    } catch {
+      /* noop */
+    } finally {
+      setCheckingFortnox(false);
+    }
+  };
 
   useEffect(() => {
     getOnboardingStatus()
@@ -56,12 +70,11 @@ function OnboardingPage() {
     getFortnoxAuthUrl({ data: { redirectUri: getFortnoxRedirectUri() } })
       .then(({ url }) => setFortnoxAuthUrl(url))
       .catch(() => {});
-    // If user returns from Fortnox callback with ?fortnox=connected
     try {
       const params = new URLSearchParams(window.location.search);
       if (params.get("fortnox") === "connected") {
         setFortnoxConnected(true);
-        setStep(3);
+        setStep(4);
       }
     } catch {}
   }, [navigate]);
@@ -110,14 +123,14 @@ function OnboardingPage() {
             <section className="space-y-5">
               <div className="flex items-center gap-2 text-primary">
                 <Sparkles className="size-5" />
-                <span className="text-xs font-medium uppercase tracking-wide">Steg 1 av 3</span>
+                <span className="text-xs font-medium uppercase tracking-wide">Steg 1 av 4</span>
               </div>
               <h1 className="font-display text-2xl md:text-3xl font-bold tracking-tight">
                 Välkommen till Pejl
               </h1>
               <p className="text-muted-foreground">
-                Pejl håller koll på ditt kassaflöde 14–30 dagar framåt och varnar när saldot
-                riskerar att gå under gränsen. Vi går igenom tre snabba steg — det tar under en minut.
+                Pejl håller koll på ditt kassaflöde 30 dagar framåt och varnar när saldot
+                riskerar att gå under gränsen. Vi går igenom fyra snabba steg — det tar under en minut.
               </p>
               <div className="space-y-2">
                 <Label htmlFor="company">Företagsnamn (valfritt)</Label>
@@ -139,38 +152,37 @@ function OnboardingPage() {
           {step === 2 && (
             <section className="space-y-5">
               <div className="flex items-center gap-2 text-primary">
-                <Link2 className="size-5" />
-                <span className="text-xs font-medium uppercase tracking-wide">Steg 2 av 3</span>
+                <Receipt className="size-5" />
+                <span className="text-xs font-medium uppercase tracking-wide">Steg 2 av 4</span>
               </div>
               <h1 className="font-display text-2xl md:text-3xl font-bold tracking-tight">
-                Koppla Fortnox
+                Fortnox integrationslicens krävs
               </h1>
               <p className="text-muted-foreground">
-                Koppla ditt bokföringssystem så hämtas fakturor och betalningar automatiskt.
-                Du kan hoppa över och köra Pejl med demo-data först.
+                För att Pejl ska kunna hämta fakturor och betalningar från ditt Fortnox-konto
+                behöver du en <strong>integrationslicens</strong> hos Fortnox. Den kostar{" "}
+                <strong>189 kr/mån</strong> och beställs direkt från Fortnox.
               </p>
-
-              {fortnoxConnected ? (
-                <div className="inline-flex items-center gap-2 rounded-full border border-success/30 bg-success/10 px-3 py-1.5 text-sm text-success">
-                  <Check className="size-4" /> Fortnox ansluten
-                </div>
-              ) : fortnoxForm ? (
-                <form action={fortnoxForm.action} method="GET" target="_top">
-                  {fortnoxForm.params.map(([name, value]) => (
-                    <input key={name} type="hidden" name={name} value={value} />
-                  ))}
-                  <Button type="submit">
-                    <Link2 className="size-4" /> Koppla Fortnox
-                  </Button>
-                </form>
-              ) : (
-                <Button disabled><Link2 className="size-4" /> Förbereder…</Button>
-              )}
-
+              <div className="rounded-xl border border-border bg-secondary/40 p-4 text-sm space-y-2">
+                <div className="font-medium text-foreground">Så gör du:</div>
+                <ol className="list-decimal pl-5 space-y-1 text-muted-foreground">
+                  <li>Logga in på Fortnox med ditt vanliga konto.</li>
+                  <li>Aktivera integrationslicensen (189 kr/mån).</li>
+                  <li>Kom tillbaka hit och koppla Pejl i nästa steg.</li>
+                </ol>
+              </div>
+              <a
+                href="https://www.fortnox.se/priser/integrationer"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+              >
+                Öppna Fortnox licenssida <ExternalLink className="size-4" />
+              </a>
               <div className="pt-2 flex gap-2">
                 <Button variant="ghost" onClick={() => setStep(1)}>Tillbaka</Button>
-                <Button variant="outline" onClick={() => setStep(3)}>
-                  {fortnoxConnected ? "Fortsätt" : "Hoppa över"} <ArrowRight className="size-4" />
+                <Button onClick={() => setStep(3)}>
+                  Jag har licensen — fortsätt <ArrowRight className="size-4" />
                 </Button>
               </div>
             </section>
@@ -179,8 +191,59 @@ function OnboardingPage() {
           {step === 3 && (
             <section className="space-y-5">
               <div className="flex items-center gap-2 text-primary">
+                <Link2 className="size-5" />
+                <span className="text-xs font-medium uppercase tracking-wide">Steg 3 av 4</span>
+              </div>
+              <h1 className="font-display text-2xl md:text-3xl font-bold tracking-tight">
+                Koppla Fortnox
+              </h1>
+              <p className="text-muted-foreground">
+                Du måste koppla Fortnox för att se din prognos. Det tar 60 sekunder.
+              </p>
+
+              {fortnoxConnected ? (
+                <div className="inline-flex items-center gap-2 rounded-full border border-success/30 bg-success/10 px-3 py-1.5 text-sm text-success">
+                  <Check className="size-4" /> Fortnox ansluten
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {fortnoxForm ? (
+                    <form action={fortnoxForm.action} method="GET" target="_top">
+                      {fortnoxForm.params.map(([name, value]) => (
+                        <input key={name} type="hidden" name={name} value={value} />
+                      ))}
+                      <Button type="submit">
+                        <Link2 className="size-4" /> Koppla Fortnox
+                      </Button>
+                    </form>
+                  ) : (
+                    <Button disabled><Link2 className="size-4" /> Förbereder…</Button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={pollFortnox}
+                    disabled={checkingFortnox}
+                    className="text-xs text-muted-foreground hover:text-foreground underline"
+                  >
+                    {checkingFortnox ? "Kollar…" : "Jag har kopplat — kolla status"}
+                  </button>
+                </div>
+              )}
+
+              <div className="pt-2 flex gap-2">
+                <Button variant="ghost" onClick={() => setStep(2)}>Tillbaka</Button>
+                <Button onClick={() => setStep(4)} disabled={!fortnoxConnected}>
+                  Fortsätt <ArrowRight className="size-4" />
+                </Button>
+              </div>
+            </section>
+          )}
+
+          {step === 4 && (
+            <section className="space-y-5">
+              <div className="flex items-center gap-2 text-primary">
                 <ShieldAlert className="size-5" />
-                <span className="text-xs font-medium uppercase tracking-wide">Steg 3 av 3</span>
+                <span className="text-xs font-medium uppercase tracking-wide">Steg 4 av 4</span>
               </div>
               <h1 className="font-display text-2xl md:text-3xl font-bold tracking-tight">
                 Sätt din varningsgräns
@@ -200,7 +263,7 @@ function OnboardingPage() {
                 />
               </div>
               <div className="pt-2 flex gap-2">
-                <Button variant="ghost" onClick={() => setStep(2)}>Tillbaka</Button>
+                <Button variant="ghost" onClick={() => setStep(3)}>Tillbaka</Button>
                 <Button onClick={handleFinish} disabled={saving}>
                   {saving ? "Sparar…" : "Klar — öppna Pejl"}
                   <ArrowRight className="size-4" />
@@ -217,8 +280,9 @@ function OnboardingPage() {
 function ProgressIndicator({ step }: { step: Step }) {
   const steps: { n: Step; label: string }[] = [
     { n: 1, label: "Välkommen" },
-    { n: 2, label: "Koppla Fortnox" },
-    { n: 3, label: "Varningsgräns" },
+    { n: 2, label: "Licens" },
+    { n: 3, label: "Koppla Fortnox" },
+    { n: 4, label: "Varningsgräns" },
   ];
   return (
     <div className="flex items-center justify-between gap-2">
