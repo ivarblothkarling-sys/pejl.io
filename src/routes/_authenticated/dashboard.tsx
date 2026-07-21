@@ -563,21 +563,25 @@ function DashboardPage() {
         )}
 
         {/* KPI row */}
-        <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <KpiCard
             icon={<Wallet className="size-4" />}
-            label={tinkStatus?.connected && tinkStatus.bankBalance != null ? "Banksaldo (idag)" : "Dagens saldo"}
-            value={
-              tinkStatus?.connected && tinkStatus.bankBalance != null
-                ? <CountUp value={tinkStatus.bankBalance} duration={800} />
-                : <CountUp value={forecast.startBalance} duration={800} />
-            }
+            label="Saldo idag"
+            value={<CountUp value={forecast.startBalance} duration={800} />}
             sub={
-              tinkStatus?.connected && tinkStatus.bankBalance != null
-                ? `Fortnox: ${formatSEK(forecast.startBalance)}`
+              !(tinkStatus?.connected && tinkStatus.bankBalance != null)
+                ? "Koppla bank för exakt saldo"
                 : undefined
             }
           />
+          {tinkStatus?.connected && tinkStatus.bankBalance != null && (
+            <KpiCard
+              icon={<Landmark className="size-4" />}
+              label="Banksaldo"
+              value={<CountUp value={tinkStatus.bankBalance} duration={800} />}
+              sub={tinkStatus.bankCurrency ?? undefined}
+            />
+          )}
           <KpiCard
             icon={forecast.endBalance >= forecast.startBalance ? <TrendingUp className="size-4 text-success" /> : <TrendingDown className="size-4 text-destructive" />}
             label="Om 30 dagar"
@@ -609,11 +613,13 @@ function DashboardPage() {
           <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 flex items-start gap-3">
             <AlertTriangle className="size-5 text-amber-500 shrink-0 mt-0.5" />
             <div className="text-sm text-foreground">
-              Ditt Fortnox-saldo visar <strong>{formatSEK(forecast.startBalance)}</strong> men bankkontot visar{" "}
-              <strong>{formatSEK(tinkStatus.bankBalance)}</strong>. Avvikelsen beror troligen på obetalda fakturor.
+              Ditt Fortnox-saldo och bankens saldo skiljer sig med{" "}
+              <strong>{formatSEK(Math.abs(tinkStatus.bankBalance - forecast.startBalance))}</strong>
+              {" "}— troligen obetalda fakturor eller transaktioner som inte bokförts ännu.
             </div>
           </div>
         )}
+
 
         {(data.awaitingApprovalSum > 0 || data.approvedPendingSum > 0) && (
           <div className="rounded-2xl border border-border bg-card p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
