@@ -1,21 +1,34 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, BellRing, Check, FileUp, Loader2 } from "lucide-react";
+import { ArrowLeft, BellRing, Check, FileUp, Landmark, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   getUserSettings,
   updateUserSettings,
   joinProviderWaitlist,
   importSieData,
 } from "@/lib/api/settings.functions";
+import { updatePendingApprovalPreference } from "@/lib/api/finance.functions";
+import { disconnectTink, getTinkAuthUrl, getTinkStatus, syncTink } from "@/lib/api/tink.functions";
 import { AVAILABLE_PROVIDERS } from "@/lib/accounting/accountingService";
 import { AVAILABLE_CURRENCIES } from "@/lib/i18n/format";
 import { AVAILABLE_LANGUAGES, type Language } from "@/lib/i18n/strings";
 import { useT } from "@/lib/i18n/useT";
 import { decodeCP437, parseSie, deriveForecast } from "@/lib/accounting/sie";
+
+const getTinkRedirectUri = () => "https://pejl.io/auth/tink/callback";
+
+type TinkStatus = {
+  connected: boolean;
+  bankBalance: number | null;
+  bankCurrency: string | null;
+  lastSyncedAt: string | null;
+};
 
 export const Route = createFileRoute("/_authenticated/installningar")({
   head: () => ({
@@ -40,12 +53,100 @@ function SettingsPage() {
     balance: number;
     count: number;
   } | null>(null);
+  const [tinkStatus, setTinkStatus] = useState<TinkStatus | null>(null);
+  const [tinkLoading, setTinkLoading] = useState(false);
+  const [tinkSyncing, setTinkSyncing] = useState(false);
+  const [pendingApprovalSaving, setPendingApprovalSaving] = useState(false);
 
   useEffect(() => {
     getUserSettings()
       .then(setSettings)
       .catch((e) => toast.error(e instanceof Error ? e.message : "Kunde inte hämta"));
   }, []);
+
+  useEffect(() => {
+    getTinkStatus()
+      .then(setTinkStatus)
+      .catch(() => {});
+  }, []);
+
+  const getTinkAuthUrlFn = useServerFn(getTinkAuthUrl);
+  const handleConnectTink = async () => {
+    const redirectUri = getTinkRedirectUri();
+    setTinkLoading(true);
+    try {
+      const res = await getTinkAuthUrlFn({ data: { redirectUri } });
+      const url = res.url;
+      try {
+        if (window.top && window.top !== window.self) {
+          window.top.location.href = url;
+        } else {
+          window.location.href = url;
+        }
+      } catch (navErr) {
+        console.warn("[Tink] top-navigation blockerad, öppnar i ny flik:", navErr);
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    } catch (err) {
+      console.error("[Tink] Fel vid koppling:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(
+        msg.includes("TINK_CLIENT")
+          ? "TINK_CLIENT_ID/TINK_CLIENT_SECRET saknas på servern. Lägg till dem i secrets."
+          : msg || "Kunde inte starta bank-koppling.",
+      );
+    } finally {
+      setTinkLoading(false);
+    }
+  };
+
+  const syncTinkFn = useServerFn(syncTink);
+  const disconnectTinkFn = useServerFn(disconnectTink);
+
+  const handleSyncTink = async () => {
+    setTinkSyncing(true);
+    try {
+      const result = await syncTinkFn();
+      const s = await getTinkStatus();
+      setTinkStatus(s);
+      toast.success(
+        `Banksaldo uppdaterat: ${result.balance.toLocaleString("sv-SE")} kr${result.currency ? " " + result.currency : ""}`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte synka bank");
+    } finally {
+      setTinkSyncing(false);
+    }
+  };
+
+  const handleDisconnectTink = async () => {
+    if (!confirm("Koppla bort banken?")) return;
+    try {
+      await disconnectTinkFn();
+      setTinkStatus({
+        connected: false,
+        bankBalance: null,
+        bankCurrency: null,
+        lastSyncedAt: null,
+      });
+      toast.success("Bank bortkopplad.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte koppla bort banken");
+    }
+  };
+
+  const handleTogglePendingApproval = async (checked: boolean) => {
+    if (!settings) return;
+    setPendingApprovalSaving(true);
+    try {
+      await updatePendingApprovalPreference({ data: { include: checked } });
+      setSettings({ ...settings, include_pending_in_forecast: checked });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Kunde inte spara");
+    } finally {
+      setPendingApprovalSaving(false);
+    }
+  };
 
   if (!settings) {
     return (
@@ -63,7 +164,7 @@ function SettingsPage() {
       await updateUserSettings({
         data: {
           accounting_provider: patch.accounting_provider as
-            | "fortnox" | "sie" | "tripletex" | "xero" | "quickbooks" | undefined,
+            "fortnox" | "sie" | "tripletex" | "xero" | "quickbooks" | undefined,
           currency: patch.currency as "SEK" | "NOK" | "GBP" | "EUR" | "USD" | undefined,
           language: patch.language as "sv" | "en" | undefined,
           country: patch.country as "SE" | "NO" | "GB" | "US" | undefined,
@@ -87,8 +188,6 @@ function SettingsPage() {
       toast.error(e instanceof Error ? e.message : "Fel");
     }
   };
-
-
 
   const handleSieFile = async (file: File) => {
     setImporting(true);
@@ -159,8 +258,8 @@ function SettingsPage() {
                     isSelected
                       ? "border-primary bg-primary/5"
                       : isAvailable
-                      ? "border-border bg-background hover:bg-secondary/40"
-                      : "border-dashed border-border bg-muted/20 opacity-70"
+                        ? "border-border bg-background hover:bg-secondary/40"
+                        : "border-dashed border-border bg-muted/20 opacity-70"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -206,7 +305,8 @@ function SettingsPage() {
                           </Button>
                           {lastImport && isSelected && (
                             <span className="text-xs text-muted-foreground">
-                              {lastImport.count} poster · {lastImport.balance.toLocaleString("sv-SE")} kr
+                              {lastImport.count} poster ·{" "}
+                              {lastImport.balance.toLocaleString("sv-SE")} kr
                             </span>
                           )}
                         </div>
@@ -246,6 +346,64 @@ function SettingsPage() {
                 </div>
               );
             })}
+          </div>
+        </section>
+
+        {/* Bank */}
+        <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+          <h2 className="text-base font-semibold">Bank</h2>
+          <p className="text-xs text-muted-foreground mt-0.5 mb-4">
+            Koppla ditt bankkonto via Tink för att jämföra banksaldot med bokföringen.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            {tinkStatus?.connected ? (
+              <>
+                <span className="inline-flex items-center gap-2 text-sm font-medium text-success bg-success/10 border border-success/30 rounded-full px-3 py-1.5">
+                  <Landmark className="size-4" /> Bank ansluten
+                </span>
+                <Button variant="outline" size="sm" onClick={handleSyncTink} disabled={tinkSyncing}>
+                  {tinkSyncing ? "Synkar…" : "Synka bank"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDisconnectTink}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  Koppla bort bank
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleConnectTink}
+                disabled={tinkLoading}
+              >
+                <Landmark className="size-4" />
+                {tinkLoading ? "Förbereder bank…" : "Koppla bank"}
+              </Button>
+            )}
+          </div>
+        </section>
+
+        {/* Prognos-inställningar */}
+        <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+          <h2 className="text-base font-semibold">Prognos-inställningar</h2>
+          <div className="mt-4 flex items-center justify-between gap-4">
+            <Label
+              htmlFor="include-pending-approval"
+              className="text-sm font-normal cursor-pointer"
+            >
+              Inkludera fakturor som väntar på attest i prognosen
+            </Label>
+            <Switch
+              id="include-pending-approval"
+              checked={settings.include_pending_in_forecast}
+              disabled={pendingApprovalSaving}
+              onCheckedChange={handleTogglePendingApproval}
+            />
           </div>
         </section>
 

@@ -15,7 +15,7 @@ export const getUserSettings = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { data: profile, error } = await supabase
       .from("profiles")
-      .select("accounting_provider, currency, country, language")
+      .select("accounting_provider, currency, country, language, include_pending_in_forecast")
       .eq("id", userId)
       .maybeSingle();
     if (error) throw new Error(error.message);
@@ -30,6 +30,7 @@ export const getUserSettings = createServerFn({ method: "GET" })
       currency: profile?.currency ?? "SEK",
       country: profile?.country ?? "SE",
       language: profile?.language ?? "sv",
+      include_pending_in_forecast: profile?.include_pending_in_forecast ?? false,
       waitlist: (waitlist ?? []).map((w) => w.provider as string),
     };
   });
