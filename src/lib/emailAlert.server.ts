@@ -1,8 +1,10 @@
-// Server-only helper: send low-balance alert emails via Resend gateway.
+// Server-only helper: send low-balance alert emails via Resend API.
+// Uses a shared RESEND_API_KEY env variable so emails work for all users,
+// independent of who owns the workspace connector.
 import { formatSEK } from "./forecast";
 import type { ForecastResult } from "./forecast";
 
-const GATEWAY_URL = "https://connector-gateway.lovable.dev/resend";
+const RESEND_URL = "https://api.resend.com/emails";
 const FROM = "Pejl <alerts@pejl.io>";
 
 export type LowBalanceEmailInput = {
@@ -12,10 +14,9 @@ export type LowBalanceEmailInput = {
 };
 
 export async function sendLowBalanceEmail({ to, companyName, forecast }: LowBalanceEmailInput) {
-  const lovableKey = process.env.LOVABLE_API_KEY;
   const resendKey = process.env.RESEND_API_KEY;
-  if (!lovableKey || !resendKey) {
-    console.error("[emailAlert] Missing LOVABLE_API_KEY or RESEND_API_KEY");
+  if (!resendKey) {
+    console.error("[emailAlert] Missing RESEND_API_KEY");
     return { ok: false as const, error: "missing_keys" };
   }
   if (!forecast.breachDate || forecast.breachAmount === null) {
@@ -59,19 +60,18 @@ export async function sendLowBalanceEmail({ to, companyName, forecast }: LowBala
   `;
 
   try {
-    const res = await fetch(`${GATEWAY_URL}/emails`, {
+    const res = await fetch(RESEND_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${lovableKey}`,
-        "X-Connection-Api-Key": resendKey,
+        Authorization: `Bearer ${resendKey}`,
       },
       body: JSON.stringify({ from: FROM, to: [to], subject, html }),
     });
     if (!res.ok) {
       const body = await res.text();
-      console.error(`[emailAlert] Resend gateway ${res.status}: ${body}`);
-      return { ok: false as const, error: `gateway_${res.status}` };
+      console.error(`[emailAlert] Resend ${res.status}: ${body}`);
+      return { ok: false as const, error: `resend_${res.status}` };
     }
     return { ok: true as const };
   } catch (err) {
