@@ -60,19 +60,18 @@ export async function sendLowBalanceEmail({ to, companyName, forecast }: LowBala
   `;
 
   try {
-    const res = await fetch(`${GATEWAY_URL}/emails`, {
+    const res = await fetch(RESEND_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${lovableKey}`,
-        "X-Connection-Api-Key": resendKey,
+        Authorization: `Bearer ${resendKey}`,
       },
       body: JSON.stringify({ from: FROM, to: [to], subject, html }),
     });
     if (!res.ok) {
       const body = await res.text();
-      console.error(`[emailAlert] Resend gateway ${res.status}: ${body}`);
-      return { ok: false as const, error: `gateway_${res.status}` };
+      console.error(`[emailAlert] Resend ${res.status}: ${body}`);
+      return { ok: false as const, error: `resend_${res.status}` };
     }
     return { ok: true as const };
   } catch (err) {
