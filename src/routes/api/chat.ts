@@ -1,6 +1,8 @@
+import { createClient } from "@supabase/supabase-js";
 import { createFileRoute } from "@tanstack/react-router";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
 
+import type { Database } from "@/integrations/supabase/types";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
 import { getDashboardData } from "@/lib/api/finance.functions";
 import { formatSEK } from "@/lib/forecast";
@@ -11,6 +13,45 @@ const DISCLAIMER =
   "Pejl ger dig och din redovisningskonsult en gemensam bild av likviditeten framåt – baserat på bokförd data i Fortnox. Ersätter inte bokföring eller rådgivning. Du och din konsult beslutar alltid själv.";
 
 const CHAT_HISTORY_LIMIT = 10;
+
+/**
+ * Verifierar bearer-token mot Supabase och returnerar det verifierade user-id:t
+ * (aldrig ett ovaliderat sub-fält) — används som nyckel för rate limiting innan
+ * vi gör något dyrt arbete (dashboard-data, LLM-anrop).
+ */
+async function getVerifiedUserId(authHeader: string): Promise<string | null> {
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
+  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) return null;
+
+  const token = authHeader.replace(/^Bearer\s+/i, "");
+  const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
+  });
+  const { data, error } = await supabase.auth.getClaims(token);
+  if (error || !data?.claims?.sub) return null;
+  return data.claims.sub;
+}
+
+const RATE_LIMIT_MAX = 20;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+// Endast in-memory — räcker för en enskild serverprocess. Nollställs vid omstart
+// och delas inte mellan ev. flera instanser, men stoppar ändå enskilda users
+// från att svämma över LLM-anropen.
+const rateLimitBuckets = new Map<string, number[]>();
+
+function checkRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const recent = (rateLimitBuckets.get(userId) ?? []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  if (recent.length >= RATE_LIMIT_MAX) {
+    rateLimitBuckets.set(userId, recent);
+    return false;
+  }
+  recent.push(now);
+  rateLimitBuckets.set(userId, recent);
+  return true;
+}
 
 /** Hämtar de senaste CHAT_HISTORY_LIMIT meddelandena för användaren, kronologiskt sorterade. */
 async function fetchRecentChatHistory(authHeader: string): Promise<UIMessage[]> {
@@ -145,6 +186,15 @@ export const Route = createFileRoute("/api/chat")({
             messages: await convertToModelMessages(messages as UIMessage[]),
           });
           return result.toUIMessageStreamResponse({ originalMessages: messages as UIMessage[] });
+        }
+
+        const userId = await getVerifiedUserId(authHeader);
+        if (!userId) return new Response("Unauthorized", { status: 401 });
+        if (!checkRateLimit(userId)) {
+          return new Response("För många meddelanden — vänta en minut och försök igen.", {
+            status: 429,
+            headers: { "Retry-After": "60" },
+          });
         }
 
         // Serverns egen kontext, inte klientens: hämta senaste historiken från

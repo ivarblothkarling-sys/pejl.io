@@ -17,6 +17,7 @@ export type Database = {
       agency_clients: {
         Row: {
           agency_user_id: string
+          client_user_id: string | null
           created_at: string
           current_balance: number
           id: string
@@ -30,6 +31,7 @@ export type Database = {
         }
         Insert: {
           agency_user_id: string
+          client_user_id?: string | null
           created_at?: string
           current_balance?: number
           id?: string
@@ -43,6 +45,7 @@ export type Database = {
         }
         Update: {
           agency_user_id?: string
+          client_user_id?: string | null
           created_at?: string
           current_balance?: number
           id?: string
@@ -53,6 +56,36 @@ export type Database = {
           status?: string
           threshold?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      agency_invites: {
+        Row: {
+          accepted_at: string | null
+          agency_client_id: string
+          agency_user_id: string
+          created_at: string
+          email: string
+          id: string
+          token: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          agency_client_id: string
+          agency_user_id: string
+          created_at?: string
+          email: string
+          id?: string
+          token: string
+        }
+        Update: {
+          accepted_at?: string | null
+          agency_client_id?: string
+          agency_user_id?: string
+          created_at?: string
+          email?: string
+          id?: string
+          token?: string
         }
         Relationships: []
       }

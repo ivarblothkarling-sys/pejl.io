@@ -37,6 +37,7 @@ const emptyForm: FormState = {
   next_warning_amount: null,
   status: "green",
   notes: null,
+  client_user_id: null,
 };
 
 function statusBadge(status: AgencyClient["status"]) {
