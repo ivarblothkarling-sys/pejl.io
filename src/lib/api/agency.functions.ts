@@ -206,6 +206,7 @@ export const inviteAgencyClient = createServerFn({ method: "POST" })
       .maybeSingle();
 
     const token = crypto.randomUUID().replace(/-/g, "");
+    const acceptUrl = `https://pejl.io/accept-invite?token=${token}`;
     const { error: insertErr } = await supabase.from("agency_invites").insert({
       agency_user_id: userId,
       agency_client_id: client.id,
@@ -219,10 +220,15 @@ export const inviteAgencyClient = createServerFn({ method: "POST" })
       to: data.email,
       agencyName: profile?.company_name ?? "Din redovisningsbyrå",
       clientName: client.name,
-      acceptUrl: `https://pejl.io/accept-invite?token=${token}`,
+      acceptUrl,
     });
 
-    return { ok: true, emailSent: result.ok };
+    return {
+      ok: true,
+      emailSent: result.ok,
+      acceptUrl,
+      emailError: result.ok ? null : result.error,
+    };
   });
 
 export const acceptAgencyInvite = createServerFn({ method: "POST" })

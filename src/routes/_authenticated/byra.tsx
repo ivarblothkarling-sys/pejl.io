@@ -11,6 +11,8 @@ import {
   ShieldCheck,
   Mail,
   CheckCircle2,
+  Check,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -83,6 +85,8 @@ function AgencyPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
   const [showInvitePreview, setShowInvitePreview] = useState(false);
+  const [inviteFallbackUrl, setInviteFallbackUrl] = useState<string | null>(null);
+  const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -160,19 +164,41 @@ function AgencyPage() {
       const result = await inviteClient({ data: { agencyClientId: inviting.id, email } });
       if (result.emailSent) {
         toast.success(`Inbjudan skickad till ${email}`);
+        setInviting(null);
+        setInviteEmail("");
+        setInviteFallbackUrl(null);
+        setInviteLinkCopied(false);
       } else {
-        toast.error(
-          "Inbjudan skapades men mejlet kunde inte skickas — kontrollera Resend-konfigurationen.",
-        );
+        setInviteFallbackUrl(result.acceptUrl);
+        const missingKey = result.emailError === "missing_keys";
+        try {
+          await navigator.clipboard.writeText(result.acceptUrl);
+          setInviteLinkCopied(true);
+          toast.success("Inbjudan skapad men mejlet kunde inte skickas", {
+            description: "Länken har kopierats — dela den manuellt.",
+          });
+          setTimeout(() => setInviteLinkCopied(false), 2500);
+        } catch {
+          toast.error(
+            missingKey
+              ? "Inbjudan skapades men Resend-nyckeln saknas i konfigurationen. Kopiera länken manuellt nedan."
+              : "Inbjudan skapades men mejlet kunde inte skickas. Kopiera länken manuellt nedan.",
+          );
+        }
       }
-      setInviting(null);
-      setInviteEmail("");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Kunde inte skicka inbjudan");
       console.error(e);
     } finally {
       setInviteSending(false);
     }
+  };
+
+  const copyInviteFallbackUrl = async () => {
+    if (!inviteFallbackUrl) return;
+    await navigator.clipboard.writeText(inviteFallbackUrl);
+    setInviteLinkCopied(true);
+    setTimeout(() => setInviteLinkCopied(false), 2500);
   };
 
   const counts = {
@@ -301,6 +327,8 @@ function AgencyPage() {
                                   setInviting({ id: c.id, name: c.name });
                                   setInviteEmail("");
                                   setShowInvitePreview(false);
+                                  setInviteFallbackUrl(null);
+                                  setInviteLinkCopied(false);
                                 }}
                                 title="Bjud in klienten att koppla sitt konto"
                               >
@@ -431,6 +459,26 @@ function AgencyPage() {
                   Förhandsgranskning — byrånamn och länk visas med platshållarvärden här och sätts
                   till de riktiga när mejlet skickas.
                 </div>
+              </div>
+            )}
+
+            {inviteFallbackUrl && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+                <p className="text-xs text-amber-400">
+                  Mejlet kunde inte skickas automatiskt. Kopiera länken nedan och skicka den
+                  manuellt till klienten.
+                </p>
+                <button
+                  onClick={copyInviteFallbackUrl}
+                  className="inline-flex items-center gap-2 text-xs bg-secondary border border-border rounded-full px-3 py-1.5 hover:bg-secondary/70 max-w-full"
+                >
+                  {inviteLinkCopied ? (
+                    <Check className="size-3.5 text-success shrink-0" />
+                  ) : (
+                    <Copy className="size-3.5 shrink-0" />
+                  )}
+                  <span className="truncate font-mono">{inviteFallbackUrl}</span>
+                </button>
               </div>
             )}
 
