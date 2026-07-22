@@ -1,7 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Plus, Pencil, Trash2, AlertTriangle, Eye, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  Plus,
+  Pencil,
+  Trash2,
+  AlertTriangle,
+  Eye,
+  ShieldCheck,
+  Mail,
+  CheckCircle2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -11,6 +21,7 @@ import { formatSEK, formatDateSv } from "@/lib/forecast";
 import {
   deleteAgencyClient,
   getAgencyClients,
+  inviteAgencyClient,
   upsertAgencyClient,
   type AgencyClient,
 } from "@/lib/api/agency.functions";
@@ -60,11 +71,15 @@ function AgencyPage() {
   const fetchClients = useServerFn(getAgencyClients);
   const saveClient = useServerFn(upsertAgencyClient);
   const removeClient = useServerFn(deleteAgencyClient);
+  const inviteClient = useServerFn(inviteAgencyClient);
 
   const [loading, setLoading] = useState(true);
   const [isAgency, setIsAgency] = useState(false);
   const [clients, setClients] = useState<AgencyClient[]>([]);
   const [editing, setEditing] = useState<FormState | null>(null);
+  const [inviting, setInviting] = useState<{ id: string; name: string } | null>(null);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteSending, setInviteSending] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -127,6 +142,33 @@ function AgencyPage() {
     } catch (e) {
       toast.error("Kunde inte ta bort");
       console.error(e);
+    }
+  };
+
+  const handleInvite = async () => {
+    if (!inviting) return;
+    const email = inviteEmail.trim();
+    if (!email || !email.includes("@")) {
+      toast.error("Ange en giltig e-postadress");
+      return;
+    }
+    setInviteSending(true);
+    try {
+      const result = await inviteClient({ data: { agencyClientId: inviting.id, email } });
+      if (result.emailSent) {
+        toast.success(`Inbjudan skickad till ${email}`);
+      } else {
+        toast.error(
+          "Inbjudan skapades men mejlet kunde inte skickas — kontrollera Resend-konfigurationen.",
+        );
+      }
+      setInviting(null);
+      setInviteEmail("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Kunde inte skicka inbjudan");
+      console.error(e);
+    } finally {
+      setInviteSending(false);
     }
   };
 
@@ -233,7 +275,27 @@ function AgencyPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="flex justify-end gap-1">
+                          <div className="flex justify-end items-center gap-1">
+                            {c.client_user_id ? (
+                              <span
+                                className="inline-flex items-center gap-1 text-xs text-emerald-400 mr-1"
+                                title="Klienten har accepterat inbjudan och är kopplad till ett konto"
+                              >
+                                <CheckCircle2 className="size-3.5" /> Kopplad
+                              </span>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setInviting({ id: c.id, name: c.name });
+                                  setInviteEmail("");
+                                }}
+                                title="Bjud in klienten att koppla sitt konto"
+                              >
+                                <Mail className="size-3.5" />
+                              </Button>
+                            )}
                             <Button size="sm" variant="ghost" onClick={() => setEditing({ ...c })}>
                               <Pencil className="size-3.5" />
                             </Button>
@@ -304,6 +366,47 @@ function AgencyPage() {
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>Avbryt</Button>
               <Button size="sm" onClick={handleSave}>Spara</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {inviting && (
+        <div
+          className="fixed inset-0 z-50 bg-background/80 backdrop-blur flex items-center justify-center p-4"
+          onClick={() => setInviting(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-border bg-card p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-semibold">Bjud in {inviting.name}</h3>
+            <p className="text-sm text-muted-foreground">
+              Klientens e-postadress skickas ett mejl med en länk för att koppla sitt Pejl-konto
+              till den här klienten. Efter det visas deras faktiska saldo och prognos här istället
+              för de manuellt satta värdena.
+            </p>
+            <div>
+              <Label>E-postadress</Label>
+              <Input
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="klient@exempel.se"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setInviting(null)}
+                disabled={inviteSending}
+              >
+                Avbryt
+              </Button>
+              <Button size="sm" onClick={handleInvite} disabled={inviteSending}>
+                {inviteSending ? "Skickar…" : "Skicka inbjudan"}
+              </Button>
             </div>
           </div>
         </div>
