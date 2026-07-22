@@ -17,7 +17,9 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { formatSEK, formatDateSv } from "@/lib/forecast";
+import { buildAgencyInviteEmail } from "@/lib/agencyInviteEmailTemplate";
 import {
   deleteAgencyClient,
   getAgencyClients,
@@ -80,6 +82,7 @@ function AgencyPage() {
   const [inviting, setInviting] = useState<{ id: string; name: string } | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
+  const [showInvitePreview, setShowInvitePreview] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -177,6 +180,13 @@ function AgencyPage() {
     yellow: clients.filter((c) => c.status === "yellow").length,
     red: clients.filter((c) => c.status === "red").length,
   };
+
+  // Platshållarvärden — byrånamnet och den riktiga länken finns bara server-side vid utskick.
+  const invitePreview = buildAgencyInviteEmail({
+    agencyName: "Din byrå",
+    clientName: inviting?.name ?? "",
+    acceptUrl: "https://pejl.io/accept-invite?token=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  });
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-secondary/30 to-background pb-24">
@@ -290,6 +300,7 @@ function AgencyPage() {
                                 onClick={() => {
                                   setInviting({ id: c.id, name: c.name });
                                   setInviteEmail("");
+                                  setShowInvitePreview(false);
                                 }}
                                 title="Bjud in klienten att koppla sitt konto"
                               >
@@ -377,7 +388,7 @@ function AgencyPage() {
           onClick={() => setInviting(null)}
         >
           <div
-            className="w-full max-w-md rounded-xl border border-border bg-card p-5 space-y-4"
+            className="w-full max-w-lg rounded-xl border border-border bg-card p-5 space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="font-semibold">Bjud in {inviting.name}</h3>
@@ -395,6 +406,34 @@ function AgencyPage() {
                 placeholder="klient@exempel.se"
               />
             </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="invite-preview-toggle" className="text-sm font-normal cursor-pointer">
+                Visa förhandsgranskning av mejlet
+              </Label>
+              <Switch
+                id="invite-preview-toggle"
+                checked={showInvitePreview}
+                onCheckedChange={setShowInvitePreview}
+              />
+            </div>
+
+            {showInvitePreview && (
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="px-3 py-2 border-b border-border bg-secondary/50 text-xs">
+                  <span className="font-medium">Ämne:</span> {invitePreview.subject}
+                </div>
+                <div
+                  className="max-h-72 overflow-y-auto bg-white"
+                  dangerouslySetInnerHTML={{ __html: invitePreview.html }}
+                />
+                <div className="px-3 py-2 border-t border-border bg-secondary/30 text-xs text-muted-foreground">
+                  Förhandsgranskning — byrånamn och länk visas med platshållarvärden här och sätts
+                  till de riktiga när mejlet skickas.
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-2">
               <Button
                 variant="ghost"
