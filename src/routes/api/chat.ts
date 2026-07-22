@@ -2,43 +2,55 @@ import { createFileRoute } from "@tanstack/react-router";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
 
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
-import { computeForecast, computeSuggestions, formatSEK, type Tx } from "@/lib/forecast";
-import { computeTaxEvents } from "@/lib/tax";
+import { getDashboardData } from "@/lib/api/finance.functions";
+import { formatSEK } from "@/lib/forecast";
 
 type ChatRequestBody = { messages?: unknown };
 
 const DISCLAIMER =
   "Pejl ger dig och din redovisningskonsult en gemensam bild av likviditeten framåt – baserat på bokförd data i Fortnox. Ersätter inte bokföring eller rådgivning. Du och din konsult beslutar alltid själv.";
 
-async function buildSystemPrompt(authHeader: string | null): Promise<string> {
-  if (!authHeader) return "Du är Pejl, en svensk ekonomiassistent. Användaren är inte inloggad.";
+const CHAT_HISTORY_LIMIT = 10;
+
+/** Hämtar de senaste CHAT_HISTORY_LIMIT meddelandena för användaren, kronologiskt sorterade. */
+async function fetchRecentChatHistory(authHeader: string): Promise<UIMessage[]> {
   const supabaseUrl = process.env.SUPABASE_URL!;
   const token = authHeader.replace(/^Bearer\s+/i, "");
+  const headers = {
+    apikey: process.env.SUPABASE_PUBLISHABLE_KEY!,
+    Authorization: `Bearer ${token}`,
+  };
 
-  const headers = { apikey: process.env.SUPABASE_PUBLISHABLE_KEY!, Authorization: `Bearer ${token}` };
-  const [profileR, txR] = await Promise.all([
-    fetch(`${supabaseUrl}/rest/v1/profiles?select=*`, { headers }),
-    fetch(`${supabaseUrl}/rest/v1/transactions?select=*&order=due_date.asc`, { headers }),
-  ]);
-  const profileArr = profileR.ok ? await profileR.json() : [];
-  const realTxs = (txR.ok ? await txR.json() : []) as Tx[];
-  const profile = profileArr[0] ?? { current_balance: 0, threshold: 0, company_name: "Mitt företag", country: "SE" };
-  const country = (profile.country ?? "SE") as "SE" | "NO" | "GB" | "US";
-  const taxTxs = computeTaxEvents(country);
-  const txs = [...realTxs, ...taxTxs].sort((a, b) => a.due_date.localeCompare(b.due_date));
-
-  const forecast = computeForecast(
-    Number(profile.current_balance) || 0,
-    Number(profile.threshold) || 0,
-    txs,
-    14,
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/chat_messages?select=id,role,content&order=created_at.desc&limit=${CHAT_HISTORY_LIMIT}`,
+    { headers },
   );
+  if (!res.ok) return [];
+  const rows = (await res.json()) as { id: string; role: string; content: string }[];
 
-  const unpaid = txs.filter((t) => !t.paid);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const overdueInvoices = realTxs
-    .filter((t) => !t.paid && t.kind === "income")
-    .map((t) => ({ ...t, daysOverdue: Math.round((today.getTime() - new Date(t.due_date).getTime()) / 86400000) }))
+  return rows
+    .filter((r) => r.role === "user" || r.role === "assistant")
+    .reverse()
+    .map((r) => ({
+      id: r.id,
+      role: r.role as "user" | "assistant",
+      parts: [{ type: "text" as const, text: r.content }],
+    }));
+}
+
+async function buildSystemPrompt(): Promise<string> {
+  const { profile, transactions, forecast, suggestions, awaitingApprovalSum } =
+    await getDashboardData();
+
+  const unpaid = transactions.filter((t) => !t.paid);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const overdueInvoices = transactions
+    .filter((t) => !t.paid && t.kind === "income" && t.category !== "tax")
+    .map((t) => ({
+      ...t,
+      daysOverdue: Math.round((today.getTime() - new Date(t.due_date).getTime()) / 86400000),
+    }))
     .filter((t) => t.daysOverdue > 30)
     .sort((a, b) => b.daysOverdue - a.daysOverdue);
 
@@ -46,28 +58,31 @@ async function buildSystemPrompt(authHeader: string | null): Promise<string> {
     ? `VARNING: saldot går under gränsen ${formatSEK(forecast.threshold)} den ${forecast.breachDate} (saldo då ca ${formatSEK(forecast.breachAmount ?? 0)}).`
     : `Ingen prognosvarning de närmaste 30 dagarna.`;
 
-  const suggestions = computeSuggestions(forecast, txs);
+  const attestWarning =
+    awaitingApprovalSum > 0
+      ? `VARNING: ${formatSEK(awaitingApprovalSum)} i leverantörsfakturor väntar på attest och räknas inte med i prognosen om inte användaren aktivt valt att inkludera dem.`
+      : null;
+
   const suggestionsBlock = suggestions.length
     ? `\n== Föreslagna åtgärder för att undvika varningen ==\n${suggestions
         .map((s) => `- ${s.label}: ${s.detail}`)
-        .join("\n")}\nOm användaren frågar "vad kan jag göra?" eller liknande, presentera dessa förslag som en punktlista och förklara kort varför var och en hjälper.`
-    : "";
-
-  const taxBlock = taxTxs.length
-    ? `\n== Kommande skatter & avgifter (mock) ==\n${taxTxs
-        .map((t) => `- ${t.due_date} | ${formatSEK(t.amount)} | ${t.description}`)
-        .join("\n")}`
+        .join(
+          "\n",
+        )}\nOm användaren frågar "vad kan jag göra?" eller liknande, presentera dessa förslag som en punktlista och förklara kort varför var och en hjälper.`
     : "";
 
   const overdueBlock = overdueInvoices.length
     ? `\n== Kundfakturor mer än 30 dagar försenade ==\n${overdueInvoices
-        .map((t) => `- ${t.due_date} | ${formatSEK(Number(t.amount))} | ${t.description} (${t.daysOverdue} dagar försenad)`)
+        .map(
+          (t) =>
+            `- ${t.due_date} | ${formatSEK(Number(t.amount))} | ${t.description} (${t.daysOverdue} dagar försenad)`,
+        )
         .join("\n")}`
     : `\n== Kundfakturor mer än 30 dagar försenade ==\nInga.`;
 
   return `Du är Pejl, en proaktiv och saklig ekonomiassistent för svenska småföretagare OCH deras redovisningskonsulter.
 Svara alltid på svenska, kort och kärnfullt – max 2–3 meningar, undvik långa utläggningar och upprepningar. Håll tonen krispig och konkret. Belopp i SEK, datum i ISO-format (YYYY-MM-DD).
-Använd ENDAST datan nedan – hitta inte på siffror. Om frågan inte rör datan, svara kort och hjälpsamt ändå.
+Använd ENDAST datan nedan – hitta inte på siffror. Svara kontextuellt utifrån den faktiska datan, inte generiskt. Om frågan inte rör datan, svara kort och hjälpsamt ändå.
 
 VIKTIGT — minne i samtalet:
 - Använd hela konversationshistoriken som kontext. Om användaren tidigare nämnt en specifik kund, faktura, leverantör, belopp eller datum – kom ihåg det och referera tillbaka till det ("som du nämnde om Acme AB…") i följande svar utan att fråga igen.
@@ -94,14 +109,17 @@ Slutsaldo: ${formatSEK(forecast.endBalance)}
 Lägsta saldo: ${formatSEK(forecast.minBalance)} (${forecast.minDate})
 Vald varningsgräns: ${formatSEK(forecast.threshold)}
 ${breach}
+${attestWarning ? `\n${attestWarning}` : ""}
 ${suggestionsBlock}
-${taxBlock}
 ${overdueBlock}
 
 == Obetalda transaktioner kommande period ==
 ${unpaid
   .slice(0, 40)
-  .map((t) => `- ${t.due_date} | ${t.kind === "income" ? "INKOMST" : "UTGIFT "} | ${t.category === "tax" ? "[SKATT] " : ""}${formatSEK(Number(t.amount))} | ${t.description}`)
+  .map(
+    (t) =>
+      `- ${t.due_date} | ${t.kind === "income" ? "INKOMST" : "UTGIFT "} | ${t.category === "tax" ? "[SKATT] " : ""}${formatSEK(Number(t.amount))} | ${t.description}`,
+  )
   .join("\n")}`;
 }
 
@@ -117,13 +135,36 @@ export const Route = createFileRoute("/api/chat")({
         const key = process.env.LOVABLE_API_KEY;
         if (!key) return new Response("Missing LOVABLE_API_KEY", { status: 500 });
 
-        const system = await buildSystemPrompt(request.headers.get("authorization"));
-
+        const authHeader = request.headers.get("authorization");
         const gateway = createLovableAiGatewayProvider(key);
+
+        if (!authHeader) {
+          const result = streamText({
+            model: gateway("google/gemini-3-flash-preview"),
+            system: "Du är Pejl, en svensk ekonomiassistent. Användaren är inte inloggad.",
+            messages: await convertToModelMessages(messages as UIMessage[]),
+          });
+          return result.toUIMessageStreamResponse({ originalMessages: messages as UIMessage[] });
+        }
+
+        // Serverns egen kontext, inte klientens: hämta senaste historiken från
+        // chat_messages och bygg systemprompten från faktisk dashboard-data,
+        // istället för att blint lita på hela meddelande-arrayen klienten skickar.
+        const [history, system] = await Promise.all([
+          fetchRecentChatHistory(authHeader),
+          buildSystemPrompt().catch((err) => {
+            console.error("[chat] Kunde inte bygga systemprompt från dashboard-data:", err);
+            return "Du är Pejl, en svensk ekonomiassistent. Kunde inte läsa aktuell ekonomidata just nu — svara kort och be användaren försöka igen om frågan kräver siffror.";
+          }),
+        ]);
+
+        const latestClientMessage = (messages as UIMessage[]).at(-1);
+        const conversation = latestClientMessage ? [...history, latestClientMessage] : history;
+
         const result = streamText({
           model: gateway("google/gemini-3-flash-preview"),
           system,
-          messages: await convertToModelMessages(messages as UIMessage[]),
+          messages: await convertToModelMessages(conversation),
         });
 
         return result.toUIMessageStreamResponse({
