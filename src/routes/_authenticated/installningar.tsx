@@ -10,6 +10,7 @@ import {
   Landmark,
   Link2,
   Loader2,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -29,6 +30,7 @@ import {
   deleteUserAccount,
 } from "@/lib/api/settings.functions";
 import { updatePendingApprovalPreference } from "@/lib/api/finance.functions";
+import { createCheckoutSession } from "@/lib/api/billing.functions";
 import { getActiveShareLinks, revokeShareLink } from "@/lib/api/share.functions";
 import { disconnectTink, getTinkAuthUrl, getTinkStatus, syncTink } from "@/lib/api/tink.functions";
 import { AVAILABLE_PROVIDERS } from "@/lib/accounting/accountingService";
@@ -84,6 +86,8 @@ function SettingsPage() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [planModalOpen, setPlanModalOpen] = useState(false);
+  const [upgradingPlan, setUpgradingPlan] = useState<"solo" | "solo_plus" | null>(null);
 
   useEffect(() => {
     getUserSettings()
@@ -314,6 +318,26 @@ function SettingsPage() {
     }
   };
 
+  const handleUpgrade = async (plan: "solo" | "solo_plus") => {
+    setUpgradingPlan(plan);
+    try {
+      const { url } = await createCheckoutSession({ data: { plan } });
+      try {
+        if (window.top && window.top !== window.self) {
+          window.top.location.href = url;
+        } else {
+          window.location.href = url;
+        }
+      } catch (navErr) {
+        console.warn("[Stripe] top-navigation blockerad, öppnar i ny flik:", navErr);
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Kunde inte starta uppgradering");
+      setUpgradingPlan(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-secondary/30 to-background pb-24">
       <header className="border-b border-border bg-background/80 backdrop-blur sticky top-0 z-10">
@@ -329,6 +353,35 @@ function SettingsPage() {
           <h1 className="text-2xl font-semibold">{t("settings.title")}</h1>
           <p className="text-sm text-muted-foreground mt-1">{t("settings.subtitle")}</p>
         </div>
+
+        {/* Prenumeration */}
+        <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+          <h2 className="text-base font-semibold">Prenumeration</h2>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <span
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium ${
+                settings.billing_status === "active"
+                  ? "text-success bg-success/10 border-success/30"
+                  : settings.billing_status === "cancelled"
+                    ? "text-destructive bg-destructive/10 border-destructive/30"
+                    : "text-muted-foreground bg-secondary border-border"
+              }`}
+            >
+              {settings.billing_status === "active" && <Check className="size-4" />}
+              {settings.billing_status === "active"
+                ? "Aktiv prenumeration"
+                : settings.billing_status === "cancelled"
+                  ? "Prenumeration avslutad"
+                  : "Provperiod"}
+            </span>
+            {settings.billing_status !== "active" && (
+              <Button size="sm" onClick={() => setPlanModalOpen(true)}>
+                <Sparkles className="size-4" />
+                Uppgradera
+              </Button>
+            )}
+          </div>
+        </section>
 
         {/* Provider */}
         <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
@@ -663,6 +716,64 @@ function SettingsPage() {
                 disabled={deleting || deleteConfirmText !== DELETE_CONFIRM_PHRASE}
               >
                 {deleting ? "Raderar…" : "Radera permanent"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {planModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-background/80 backdrop-blur flex items-center justify-center p-4"
+          onClick={() => !upgradingPlan && setPlanModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-border bg-card p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-semibold">Välj plan</h3>
+            <p className="text-sm text-muted-foreground">
+              30 dagars gratis provperiod, avsluta när som helst. Du skickas vidare till Stripe för
+              betalning.
+            </p>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => handleUpgrade("solo")}
+                disabled={upgradingPlan !== null}
+                className="w-full rounded-lg border border-border p-4 text-left transition-colors hover:bg-secondary/40 disabled:opacity-60"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">Pejl Solo</span>
+                  <span className="text-sm tabular-nums">299 kr/mån</span>
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {upgradingPlan === "solo" ? "Förbereder…" : "För enskild firma"}
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleUpgrade("solo_plus")}
+                disabled={upgradingPlan !== null}
+                className="w-full rounded-lg border border-border p-4 text-left transition-colors hover:bg-secondary/40 disabled:opacity-60"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">Pejl Solo+</span>
+                  <span className="text-sm tabular-nums">499 kr/mån</span>
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {upgradingPlan === "solo_plus" ? "Förbereder…" : "För fler bolag och byråer"}
+                </div>
+              </button>
+            </div>
+            <div className="flex justify-end pt-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setPlanModalOpen(false)}
+                disabled={upgradingPlan !== null}
+              >
+                Avbryt
               </Button>
             </div>
           </div>
