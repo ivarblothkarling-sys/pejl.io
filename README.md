@@ -69,6 +69,8 @@ Alla secrets finns i **Lovable Cloud → Secrets** och injektas som env-vars i s
 | `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` | Auto | Server Data API | Server |
 | `SUPABASE_SERVICE_ROLE_KEY` | Auto | `supabaseAdmin` — bypassar RLS | Server (kritisk) |
 | `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` | Auto | Browser-klient | Publikt |
+| `SENTRY_DSN` | Sentry-projekt | Error monitoring på servern (`@sentry/cloudflare` i `src/server.ts`) | Server |
+| `VITE_SENTRY_DSN` | Sentry-projekt (samma DSN som ovan) | Error monitoring i browsern (`@sentry/react` i `src/router.tsx`) — måste ha `VITE_`-prefix för att nå klientbundlen, se regler ovan | Publikt (DSN:er är inte hemliga) |
 
 ## Databas
 

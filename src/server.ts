@@ -1,11 +1,15 @@
 import "./lib/error-capture";
 
+import * as Sentry from "@sentry/cloudflare";
+
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
 };
+
+type WorkerEnv = { SENTRY_DSN?: string };
 
 let serverEntryPromise: Promise<ServerEntry> | undefined;
 
@@ -37,13 +41,14 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   });
 }
 
-export default {
+const handler = {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
-      const handler = await getServerEntry();
-      const response = await handler.fetch(request, env, ctx);
+      const server = await getServerEntry();
+      const response = await server.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);
     } catch (error) {
+      Sentry.captureException(error);
       console.error(error);
       return new Response(renderErrorPage(), {
         status: 500,
@@ -52,3 +57,17 @@ export default {
     }
   },
 };
+
+// withSentry initierar SDK:t per request (Cloudflare Workers binder env vid
+// request-tid, inte vid modul-laddning — se config.server.ts) och wrappar
+// fetch-hanteraren så ofångade fel och spans rapporteras automatiskt.
+export default Sentry.withSentry<WorkerEnv>(
+  (env) => ({
+    // env kan vara undefined i lokal Vite dev-server (inga riktiga Cloudflare
+    // env-bindings där) — optional chaining så lokal utveckling inte kraschar
+    // på varje request när SENTRY_DSN inte är satt.
+    dsn: env?.SENTRY_DSN,
+    tracesSampleRate: 1.0,
+  }),
+  handler,
+);

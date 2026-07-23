@@ -173,7 +173,7 @@ ${unpaid
   .join("\n")}`;
 }
 
-const SIMULATE_ACTION_DESCRIPTION = `Simulerar effekten av en åtgärd på 30-dagarsprognosen och returnerar prognosen före/efter jämförelse. "action" MÅSTE vara en av dessa strängformat (id:t kommer från get_overdue_invoices/get_upcoming_expenses):
+const CALCULATE_IF_ACTION_HELPS_DESCRIPTION = `Räknar ut om en åtgärd faktiskt löser eller lindrar likviditetsvarningen, genom att räkna om 30-dagarsprognosen som om åtgärden vidtagits. "action" MÅSTE vara en av dessa strängformat (id:t kommer från get_overdue_invoices/get_upcoming_expenses):
 - "defer:<id>:<dagar>" — skjuter upp en specifik transaktions förfallodatum med angivet antal dagar.
 - "remind:<id>" — simulerar att en kundfaktura betalas idag istället för sitt ordinarie förfallodatum (t.ex. efter en betalningspåminnelse).
 Om formatet inte matchar exakt returneras ett fel — gissa inte på ett annat format.`;
@@ -235,8 +235,8 @@ async function buildSmartSuggestions(): Promise<string[]> {
           .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
       },
     }),
-    simulate_action: tool({
-      description: SIMULATE_ACTION_DESCRIPTION,
+    calculate_if_action_helps: tool({
+      description: CALCULATE_IF_ACTION_HELPS_DESCRIPTION,
       inputSchema: z.object({ action: z.string() }),
       execute: async ({ action }) => {
         const deferMatch = action.match(/^defer:([^:]+):(\d+)$/);
@@ -270,12 +270,12 @@ async function buildSmartSuggestions(): Promise<string[]> {
           30,
         );
         return {
+          helps: forecast.breachDate !== null && newForecast.breachDate === null,
           originalBreachDate: forecast.breachDate,
           originalBreachAmount: forecast.breachAmount,
           newBreachDate: newForecast.breachDate,
           newBreachAmount: newForecast.breachAmount,
           newMinBalance: newForecast.minBalance,
-          resolvesBreach: forecast.breachDate !== null && newForecast.breachDate === null,
         };
       },
     }),
