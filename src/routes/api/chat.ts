@@ -50,16 +50,33 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 // från att svämma över LLM-anropen.
 const rateLimitBuckets = new Map<string, number[]>();
 
-function checkRateLimit(userId: string): boolean {
+type RateLimitResult = { allowed: boolean; retryAfterSeconds: number };
+
+function checkRateLimit(userId: string): RateLimitResult {
   const now = Date.now();
+  // recent är i stigande tidsordning eftersom vi bara någonsin pushar nya
+  // timestamps sist — recent[0] är alltså den äldsta och avgör när nästa
+  // plats i fönstret öppnas upp.
   const recent = (rateLimitBuckets.get(userId) ?? []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
   if (recent.length >= RATE_LIMIT_MAX) {
     rateLimitBuckets.set(userId, recent);
-    return false;
+    const oldest = recent[0];
+    const retryAfterSeconds = Math.max(
+      1,
+      Math.ceil((RATE_LIMIT_WINDOW_MS - (now - oldest)) / 1000),
+    );
+    return { allowed: false, retryAfterSeconds };
   }
   recent.push(now);
   rateLimitBuckets.set(userId, recent);
-  return true;
+  return { allowed: true, retryAfterSeconds: 0 };
+}
+
+function rateLimitResponse(retryAfterSeconds: number) {
+  return Response.json(
+    { error: "Du har skickat för många meddelanden. Försök igen om en minut." },
+    { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } },
+  );
 }
 
 /** Hämtar de senaste CHAT_HISTORY_LIMIT meddelandena för användaren, kronologiskt sorterade. */
@@ -327,12 +344,8 @@ export const Route = createFileRoute("/api/chat")({
 
         const userId = await getVerifiedUserId(authHeader);
         if (!userId) return new Response("Unauthorized", { status: 401 });
-        if (!checkRateLimit(userId)) {
-          return new Response("För många meddelanden — vänta en minut och försök igen.", {
-            status: 429,
-            headers: { "Retry-After": "60" },
-          });
-        }
+        const rateLimit = checkRateLimit(userId);
+        if (!rateLimit.allowed) return rateLimitResponse(rateLimit.retryAfterSeconds);
 
         // Serverns egen kontext, inte klientens: hämta senaste historiken från
         // chat_messages och bygg systemprompten från faktisk dashboard-data,
@@ -367,12 +380,8 @@ export const Route = createFileRoute("/api/chat")({
 
         const userId = await getVerifiedUserId(authHeader);
         if (!userId) return new Response("Unauthorized", { status: 401 });
-        if (!checkRateLimit(userId)) {
-          return new Response("För många förfrågningar — vänta en minut och försök igen.", {
-            status: 429,
-            headers: { "Retry-After": "60" },
-          });
-        }
+        const rateLimit = checkRateLimit(userId);
+        if (!rateLimit.allowed) return rateLimitResponse(rateLimit.retryAfterSeconds);
 
         try {
           const suggestions = await buildSmartSuggestions();
