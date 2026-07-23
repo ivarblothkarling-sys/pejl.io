@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, BellRing, Check, FileUp, Landmark, Loader2 } from "lucide-react";
+import { ArrowLeft, BellRing, Check, FileUp, Landmark, Link2, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -14,12 +14,14 @@ import {
   importSieData,
 } from "@/lib/api/settings.functions";
 import { updatePendingApprovalPreference } from "@/lib/api/finance.functions";
+import { getActiveShareLinks, revokeShareLink } from "@/lib/api/share.functions";
 import { disconnectTink, getTinkAuthUrl, getTinkStatus, syncTink } from "@/lib/api/tink.functions";
 import { AVAILABLE_PROVIDERS } from "@/lib/accounting/accountingService";
 import { AVAILABLE_CURRENCIES } from "@/lib/i18n/format";
 import { AVAILABLE_LANGUAGES, type Language } from "@/lib/i18n/strings";
 import { useT } from "@/lib/i18n/useT";
 import { decodeCP437, parseSie, deriveForecast } from "@/lib/accounting/sie";
+import { formatDateSv } from "@/lib/forecast";
 
 const getTinkRedirectUri = () => "https://pejl.io/auth/tink/callback";
 
@@ -56,6 +58,10 @@ function SettingsPage() {
   const [tinkStatus, setTinkStatus] = useState<TinkStatus | null>(null);
   const [tinkLoading, setTinkLoading] = useState(false);
   const [tinkSyncing, setTinkSyncing] = useState(false);
+  const [shareLinks, setShareLinks] = useState<
+    { token: string; created_at: string; expires_at: string }[]
+  >([]);
+  const [revokingToken, setRevokingToken] = useState<string | null>(null);
   const [pendingApprovalSaving, setPendingApprovalSaving] = useState(false);
 
   useEffect(() => {
@@ -69,6 +75,30 @@ function SettingsPage() {
       .then(setTinkStatus)
       .catch(() => {});
   }, []);
+
+  const loadShareLinks = () => {
+    getActiveShareLinks()
+      .then((res) => setShareLinks(res.links))
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    loadShareLinks();
+  }, []);
+
+  const revokeShareLinkFn = useServerFn(revokeShareLink);
+  const handleRevokeShareLink = async (token: string) => {
+    setRevokingToken(token);
+    try {
+      await revokeShareLinkFn({ data: { token } });
+      setShareLinks((links) => links.filter((l) => l.token !== token));
+      toast.success("Länken är återkallad.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Kunde inte återkalla länken");
+    } finally {
+      setRevokingToken(null);
+    }
+  };
 
   const getTinkAuthUrlFn = useServerFn(getTinkAuthUrl);
   const handleConnectTink = async () => {
@@ -215,7 +245,11 @@ function SettingsPage() {
         balance: derived.currentBalance,
         count: res.count,
       });
-      toast.success(`Importerade ${res.count} transaktioner från ${parsed.companyName}`);
+      toast.success(
+        res.skipped > 0
+          ? `Importerade ${res.count} nya transaktioner från ${parsed.companyName} (${res.skipped} fanns redan och hoppades över)`
+          : `Importerade ${res.count} transaktioner från ${parsed.companyName}`,
+      );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Kunde inte läsa SIE-filen");
     } finally {
@@ -387,6 +421,44 @@ function SettingsPage() {
             )}
           </div>
         </section>
+
+        {/* Delade länkar */}
+        {shareLinks.length > 0 && (
+          <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+            <h2 className="text-base font-semibold">Delade länkar</h2>
+            <p className="text-xs text-muted-foreground mt-0.5 mb-4">
+              Aktiva länkar till din prognos. Vem som helst med länken kan se den tills den går ut
+              eller återkallas.
+            </p>
+            <div className="space-y-2">
+              {shareLinks.map((link) => (
+                <div
+                  key={link.token}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Link2 className="size-3.5 text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-xs font-mono truncate">{link.token}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Giltig till {formatDateSv(link.expires_at)}
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={revokingToken === link.token}
+                    onClick={() => handleRevokeShareLink(link.token)}
+                    className="text-muted-foreground hover:text-destructive shrink-0"
+                  >
+                    <X className="size-3.5" /> Återkalla länk
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Prognos-inställningar */}
         <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">

@@ -10,11 +10,41 @@ export const createShareLink = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const token = crypto.randomUUID().replace(/-/g, "");
+    // expires_at sätts av kolumnens DEFAULT (now() + 30 dagar) — läs tillbaka
+    // det faktiska värdet istället för att räkna ut det själv på klienten.
+    const { data: inserted, error } = await context.supabase
+      .from("share_tokens")
+      .insert({ token, user_id: context.userId })
+      .select("expires_at")
+      .single();
+    if (error) throw new Error(error.message);
+    return { token, expiresAt: inserted.expires_at };
+  });
+
+export const getActiveShareLinks = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("share_tokens")
+      .select("token, created_at, expires_at")
+      .eq("user_id", context.userId)
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return { links: data ?? [] };
+  });
+
+export const revokeShareLink = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ token: z.string().min(8).max(64) }))
+  .handler(async ({ data, context }) => {
     const { error } = await context.supabase
       .from("share_tokens")
-      .insert({ token, user_id: context.userId });
+      .delete()
+      .eq("token", data.token)
+      .eq("user_id", context.userId);
     if (error) throw new Error(error.message);
-    return { token };
+    return { ok: true };
   });
 
 export const getSharedDashboard = createServerFn({ method: "GET" })
@@ -24,11 +54,12 @@ export const getSharedDashboard = createServerFn({ method: "GET" })
 
     const { data: row, error: tokenErr } = await supabaseAdmin
       .from("share_tokens")
-      .select("user_id")
+      .select("user_id, expires_at")
       .eq("token", data.token)
       .maybeSingle();
     if (tokenErr) throw new Error(tokenErr.message);
     if (!row) throw notFound();
+    if (row.expires_at && new Date(row.expires_at) < new Date()) throw notFound();
 
     const userId = row.user_id as string;
     const [profileRes, txRes] = await Promise.all([

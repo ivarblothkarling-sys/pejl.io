@@ -1,11 +1,20 @@
 import { createClient } from "@supabase/supabase-js";
 import { createFileRoute } from "@tanstack/react-router";
-import { convertToModelMessages, streamText, type UIMessage } from "ai";
+import {
+  convertToModelMessages,
+  generateText,
+  Output,
+  stepCountIs,
+  streamText,
+  tool,
+  type UIMessage,
+} from "ai";
+import { z } from "zod";
 
 import type { Database } from "@/integrations/supabase/types";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
 import { getDashboardData } from "@/lib/api/finance.functions";
-import { formatSEK } from "@/lib/forecast";
+import { computeForecast, formatSEK, type Tx } from "@/lib/forecast";
 
 type ChatRequestBody = { messages?: unknown };
 
@@ -164,6 +173,134 @@ ${unpaid
   .join("\n")}`;
 }
 
+const SIMULATE_ACTION_DESCRIPTION = `Simulerar effekten av en åtgärd på 30-dagarsprognosen och returnerar prognosen före/efter jämförelse. "action" MÅSTE vara en av dessa strängformat (id:t kommer från get_overdue_invoices/get_upcoming_expenses):
+- "defer:<id>:<dagar>" — skjuter upp en specifik transaktions förfallodatum med angivet antal dagar.
+- "remind:<id>" — simulerar att en kundfaktura betalas idag istället för sitt ordinarie förfallodatum (t.ex. efter en betalningspåminnelse).
+Om formatet inte matchar exakt returneras ett fel — gissa inte på ett annat format.`;
+
+/**
+ * Genererar 0–N kontextuella, klickbara chattförslag baserat på användarens
+ * FAKTISKA data — ersätter den tidigare hårdkodade regelmotorn i
+ * dashboard.tsx. Claude får tre verktyg för att undersöka data och simulera
+ * åtgärder innan den svarar; om allt ser stabilt ut kan den (och ska den)
+ * returnera en tom lista istället för att fylla på till ett visst antal.
+ */
+async function buildSmartSuggestions(): Promise<string[]> {
+  const key = process.env.LOVABLE_API_KEY;
+  if (!key) return [];
+
+  const { transactions, forecast } = await getDashboardData();
+
+  const tools = {
+    get_overdue_invoices: tool({
+      description: "Hämtar kundfakturor (inkomster) som är förfallna men obetalda idag.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return transactions
+          .filter((t) => !t.paid && t.kind === "income" && new Date(t.due_date) < today)
+          .map((t) => ({
+            id: t.id,
+            description: t.description,
+            amount: Number(t.amount),
+            dueDate: t.due_date,
+            daysOverdue: Math.round((today.getTime() - new Date(t.due_date).getTime()) / 86400000),
+          }))
+          .sort((a, b) => b.daysOverdue - a.daysOverdue);
+      },
+    }),
+    get_upcoming_expenses: tool({
+      description:
+        "Hämtar obetalda utgifter (leverantörsfakturor, skatter m.m.) som förfaller inom angivet antal dagar framåt.",
+      inputSchema: z.object({ days: z.number().int().min(1).max(90) }),
+      execute: async ({ days }) => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const cutoff = new Date(today);
+        cutoff.setDate(cutoff.getDate() + days);
+        return transactions
+          .filter((t) => !t.paid && t.kind === "expense")
+          .filter((t) => {
+            const d = new Date(t.due_date);
+            return d >= today && d <= cutoff;
+          })
+          .map((t) => ({
+            id: t.id,
+            description: t.description,
+            amount: Number(t.amount),
+            dueDate: t.due_date,
+            isTax: t.category === "tax",
+          }))
+          .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+      },
+    }),
+    simulate_action: tool({
+      description: SIMULATE_ACTION_DESCRIPTION,
+      inputSchema: z.object({ action: z.string() }),
+      execute: async ({ action }) => {
+        const deferMatch = action.match(/^defer:([^:]+):(\d+)$/);
+        const remindMatch = action.match(/^remind:([^:]+)$/);
+
+        let modified: Tx[];
+        if (deferMatch) {
+          const [, txId, daysStr] = deferMatch;
+          const tx = transactions.find((t) => t.id === txId);
+          if (!tx) return { error: `Ingen transaktion med id "${txId}" hittades.` };
+          const newDate = new Date(tx.due_date);
+          newDate.setDate(newDate.getDate() + Number(daysStr));
+          const newDueDate = newDate.toISOString().slice(0, 10);
+          modified = transactions.map((t) => (t.id === txId ? { ...t, due_date: newDueDate } : t));
+        } else if (remindMatch) {
+          const [, txId] = remindMatch;
+          const tx = transactions.find((t) => t.id === txId);
+          if (!tx) return { error: `Ingen transaktion med id "${txId}" hittades.` };
+          const todayIso = new Date().toISOString().slice(0, 10);
+          modified = transactions.map((t) => (t.id === txId ? { ...t, due_date: todayIso } : t));
+        } else {
+          return {
+            error: `Okänt action-format: "${action}". Använd "defer:<id>:<dagar>" eller "remind:<id>".`,
+          };
+        }
+
+        const newForecast = computeForecast(
+          forecast.startBalance,
+          forecast.threshold,
+          [...modified].sort((a, b) => a.due_date.localeCompare(b.due_date)),
+          30,
+        );
+        return {
+          originalBreachDate: forecast.breachDate,
+          originalBreachAmount: forecast.breachAmount,
+          newBreachDate: newForecast.breachDate,
+          newBreachAmount: newForecast.breachAmount,
+          newMinBalance: newForecast.minBalance,
+          resolvesBreach: forecast.breachDate !== null && newForecast.breachDate === null,
+        };
+      },
+    }),
+  };
+
+  const gateway = createLovableAiGatewayProvider(key);
+  const result = await generateText({
+    model: gateway("google/gemini-3-flash-preview"),
+    system: `Du är Pejl, en ekonomiassistent. Din enda uppgift just nu är att generera 0–4 korta, konkreta chattförslag (på svenska, max ~12 ord var) som användaren skulle vilja klicka på, baserat på DERAS FAKTISKA data.
+
+Använd verktygen för att undersöka förfallna kundfakturor och kommande utgifter, och simulera relevanta åtgärder innan du bestämmer dig — gissa aldrig.
+
+Regler:
+- Om allt ser stabilt ut (ingen prognosvarning, inga förfallna fakturor) — returnera en TOM lista. Hitta inte på förslag för att fylla en kvot.
+- Föreslå ALDRIG exakt tre stycken av gammal vana. Antalet ska spegla vad datan faktiskt visar.
+- Varje förslag ska vara skrivet som en fråga/uppmaning från användarens perspektiv, t.ex. "Kan jag skjuta upp hyran en vecka?" — inte ett påstående om läget.`,
+    prompt: "Generera kontextuella chattförslag baserat på min nuvarande ekonomi.",
+    tools,
+    stopWhen: stepCountIs(4),
+    output: Output.array({ element: z.string() }),
+  });
+
+  return result.output ?? [];
+}
+
 export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
@@ -220,6 +357,30 @@ export const Route = createFileRoute("/api/chat")({
         return result.toUIMessageStreamResponse({
           originalMessages: messages as UIMessage[],
         });
+      },
+
+      // Datadrivna chattförslag för dashboardens tomma chattläge — se
+      // buildSmartSuggestions ovan. Delar auth/rate-limit med POST ovan.
+      GET: async ({ request }) => {
+        const authHeader = request.headers.get("authorization");
+        if (!authHeader) return Response.json({ suggestions: [] });
+
+        const userId = await getVerifiedUserId(authHeader);
+        if (!userId) return new Response("Unauthorized", { status: 401 });
+        if (!checkRateLimit(userId)) {
+          return new Response("För många förfrågningar — vänta en minut och försök igen.", {
+            status: 429,
+            headers: { "Retry-After": "60" },
+          });
+        }
+
+        try {
+          const suggestions = await buildSmartSuggestions();
+          return Response.json({ suggestions });
+        } catch (err) {
+          console.error("[chat] Kunde inte generera smarta förslag:", err);
+          return Response.json({ suggestions: [] });
+        }
       },
     },
   },

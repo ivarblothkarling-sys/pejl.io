@@ -107,6 +107,7 @@ function DashboardPage() {
   const [tinkAuthUrl, setTinkAuthUrl] = useState<string | null>(null);
   const [tinkLoading, setTinkLoading] = useState(false);
   const [tinkSyncing, setTinkSyncing] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
 
 
 
@@ -184,6 +185,25 @@ function DashboardPage() {
     getTinkStatus()
       .then((s) => setTinkStatus(s))
       .catch(() => {});
+  }, []);
+
+  // Datadrivna chattförslag (AI tool-calling, se GET /api/chat) — ersätter
+  // den tidigare hårdkodade regelmotorn. Kan returnera en tom lista om allt
+  // ser stabilt ut; ingen fallback-utfyllnad till ett visst antal.
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token;
+        if (!token) return;
+        const res = await fetch("/api/chat", { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) return;
+        const json = (await res.json()) as { suggestions?: string[] };
+        setAiSuggestions(Array.isArray(json.suggestions) ? json.suggestions : []);
+      } catch {
+        /* noop — chattförslagen är en trevlig detalj, inte kritiska */
+      }
+    })();
   }, []);
 
   const getTinkAuthUrlFn = useServerFn(getTinkAuthUrl);
@@ -328,10 +348,14 @@ function DashboardPage() {
       try {
         await navigator.clipboard.writeText(url);
         setShareCopied(true);
-        toast.success("Länk kopierad", { description: "Skicka den till din redovisningskonsult." });
+        toast.success("Länk kopierad", {
+          description: "Skicka den till din redovisningskonsult. Länken är giltig i 30 dagar.",
+        });
         setTimeout(() => setShareCopied(false), 2500);
       } catch {
-        toast.success("Länk skapad", { description: "Kopiera den manuellt nedan." });
+        toast.success("Länk skapad", {
+          description: "Kopiera den manuellt nedan. Länken är giltig i 30 dagar.",
+        });
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Kunde inte skapa länk");
@@ -414,41 +438,6 @@ function DashboardPage() {
   const chatGreeting = hasBreach
     ? `Hej 👋 Jag ser att du har ett potentiellt likviditetsproblem om **${daysUntilBreach} dagar** — den **${formatDateSv(forecast.breachDate!)}** beräknas saldot bli **${formatSEK(forecast.breachAmount ?? 0)}**, vilket är under din gräns på ${formatSEK(forecast.threshold)}.\n\nVill du att jag hjälper dig lösa det?`
     : null;
-
-  const smartSuggestions: string[] = [];
-  if (hasBreach) {
-    smartSuggestions.push(
-      `Hur undviker jag varningen den ${formatDateSv(forecast.breachDate!)}?`,
-    );
-  }
-  const nextTaxTx = transactions
-    .filter((t) => t.category === "tax" && !t.paid)
-    .sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
-  if (nextTaxTx && smartSuggestions.length < 3) {
-    smartSuggestions.push(
-      `Klarar jag ${nextTaxTx.description.toLowerCase()} den ${formatDateSv(nextTaxTx.due_date)} (${formatSEK(Number(nextTaxTx.amount))})?`,
-    );
-  }
-  const bigIncome = transactions
-    .filter((t) => !t.paid && t.kind === "income")
-    .sort((a, b) => Number(b.amount) - Number(a.amount))[0];
-  if (bigIncome && smartSuggestions.length < 3) {
-    smartSuggestions.push(
-      `Vad händer om ${bigIncome.description} (${formatSEK(Number(bigIncome.amount))}) betalas 5 dagar sent?`,
-    );
-  }
-  const bigExpense = transactions
-    .filter((t) => !t.paid && t.kind === "expense" && t.category !== "tax")
-    .sort((a, b) => Number(b.amount) - Number(a.amount))[0];
-  if (bigExpense && smartSuggestions.length < 3) {
-    smartSuggestions.push(
-      `Kan jag skjuta upp ${bigExpense.description.toLowerCase()} den ${formatDateSv(bigExpense.due_date)}?`,
-    );
-  }
-  while (smartSuggestions.length < 3) {
-    smartSuggestions.push("Hur går det ekonomiskt just nu?");
-  }
-  const finalSuggestions = smartSuggestions.slice(0, 3);
 
   const taxItems = transactions
     .filter((t) => t.category === "tax" && !t.paid)
@@ -742,13 +731,16 @@ function DashboardPage() {
             {shareLoading ? "Skapar länk…" : "Dela med din redovisningskonsult →"}
           </Button>
           {shareUrl && (
-            <button
-              onClick={copyShareUrl}
-              className="inline-flex items-center gap-2 text-xs bg-secondary border border-border rounded-full px-3 py-1.5 hover:bg-secondary/70 max-w-full"
-            >
-              {shareCopied ? <Check className="size-3.5 text-success shrink-0" /> : <Copy className="size-3.5 shrink-0" />}
-              <span className="truncate font-mono">{shareUrl}</span>
-            </button>
+            <div className="flex flex-col gap-1">
+              <button
+                onClick={copyShareUrl}
+                className="inline-flex items-center gap-2 text-xs bg-secondary border border-border rounded-full px-3 py-1.5 hover:bg-secondary/70 max-w-full"
+              >
+                {shareCopied ? <Check className="size-3.5 text-success shrink-0" /> : <Copy className="size-3.5 shrink-0" />}
+                <span className="truncate font-mono">{shareUrl}</span>
+              </button>
+              <span className="text-xs text-muted-foreground">Länken är giltig i 30 dagar.</span>
+            </div>
           )}
         </div>
 
@@ -1040,7 +1032,7 @@ function DashboardPage() {
           </div>
           <ChatPanel
             greeting={chatGreeting}
-            suggestions={finalSuggestions}
+            suggestions={aiSuggestions}
             injectRef={chatInjectRef}
           />
         </section>
@@ -1093,12 +1085,6 @@ function KpiCard({
     </div>
   );
 }
-
-const SUGGESTED_FALLBACK = [
-  "Hur går det ekonomiskt just nu?",
-  "När förfaller min nästa momsdeklaration?",
-  "Vilka kundfakturor är mer än 30 dagar försenade?",
-];
 
 function ChatPanel({
   greeting,
@@ -1172,7 +1158,7 @@ function ChatPanel({
       initialMessages={initialMessages}
       persistedIds={persistedIds}
       taRef={taRef}
-      suggestions={suggestions.length ? suggestions : SUGGESTED_FALLBACK}
+      suggestions={suggestions}
       injectRef={injectRef}
     />
   );

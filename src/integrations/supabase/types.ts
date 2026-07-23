@@ -168,6 +168,7 @@ export type Database = {
           language: string
           last_low_balance_alert_at: string | null
           last_low_balance_alert_key: string | null
+          last_weekly_summary_sent_at: string | null
           onboarding_completed: boolean
           threshold: number
           updated_at: string
@@ -184,6 +185,7 @@ export type Database = {
           language?: string
           last_low_balance_alert_at?: string | null
           last_low_balance_alert_key?: string | null
+          last_weekly_summary_sent_at?: string | null
           onboarding_completed?: boolean
           threshold?: number
           updated_at?: string
@@ -200,6 +202,7 @@ export type Database = {
           language?: string
           last_low_balance_alert_at?: string | null
           last_low_balance_alert_key?: string | null
+          last_weekly_summary_sent_at?: string | null
           onboarding_completed?: boolean
           threshold?: number
           updated_at?: string
@@ -230,16 +233,19 @@ export type Database = {
       share_tokens: {
         Row: {
           created_at: string
+          expires_at: string
           token: string
           user_id: string
         }
         Insert: {
           created_at?: string
+          expires_at?: string
           token: string
           user_id: string
         }
         Update: {
           created_at?: string
+          expires_at?: string
           token?: string
           user_id?: string
         }

@@ -7,8 +7,12 @@
 # för exakt merge-logik.
 
 [triggers]
-# 05:00 UTC = 06:00 CET (vintertid). Cloudflare Cron Triggers körs alltid i
-# UTC och följer INTE sommartid — under CEST (sommartid, UTC+2) blir det i
-# praktiken 07:00 lokal tid istället för 06:00. Justera manuellt två gånger
-# om året om exakt 06:00 året runt är ett hårt krav.
-crons = ["0 5 * * *"]
+# Cloudflare Cron Triggers körs alltid i UTC och följer INTE sommartid —
+# under CEST (sommartid, UTC+2) blir tiderna nedan 1h senare lokalt än
+# kommentaren anger. Justera manuellt två gånger om året om exakt lokal tid
+# året runt är ett hårt krav. Dispatchas i plugins/cloudflare-scheduled.ts,
+# som avgör vilket jobb som ska köras via controller.cron.
+crons = [
+  "0 5 * * *", # 05:00 UTC = 06:00 CET (vintertid) — daglig Fortnox-synk, varje dag.
+  "0 6 * * 1", # 06:00 UTC = 07:00 CET (vintertid) — veckobrev, måndagar.
+]

@@ -107,15 +107,28 @@ export const importSieData = createServerFn({ method: "POST" })
       .eq("id", userId);
     if (pErr) throw new Error(pErr.message);
 
-    // Replace all transactions for the user with the SIE-derived set
-    const { error: delErr } = await supabase
+    // Dedup mot redan importerade SIE-rader istället för att blint tömma och
+    // återinsätta — annars skulle en omkörning av samma fil (eller en fil som
+    // delvis överlappar en tidigare import) dubblera transaktioner. Nyckeln
+    // är due_date+amount, precis som en identisk rad ser ut i SIE-filen.
+    // OBS: rör inte transaktioner från andra källor (fortnox/tink/mock) —
+    // den gamla koden gjorde det av misstag genom att radera hela tabellen.
+    const { data: existingSie, error: existingErr } = await supabase
       .from("transactions")
-      .delete()
-      .eq("user_id", userId);
-    if (delErr) throw new Error(delErr.message);
+      .select("due_date, amount")
+      .eq("user_id", userId)
+      .eq("source", "sie");
+    if (existingErr) throw new Error(existingErr.message);
 
-    if (data.transactions.length > 0) {
-      const rows = data.transactions.map((t) => ({
+    const existingKeys = new Set(
+      (existingSie ?? []).map((t) => `${t.due_date}|${Number(t.amount)}`),
+    );
+    const newTransactions = data.transactions.filter(
+      (t) => !existingKeys.has(`${t.due_date}|${t.amount}`),
+    );
+
+    if (newTransactions.length > 0) {
+      const rows = newTransactions.map((t) => ({
         user_id: userId,
         kind: t.kind,
         amount: t.amount,
@@ -128,5 +141,9 @@ export const importSieData = createServerFn({ method: "POST" })
       if (insErr) throw new Error(insErr.message);
     }
 
-    return { ok: true, count: data.transactions.length };
+    return {
+      ok: true,
+      count: newTransactions.length,
+      skipped: data.transactions.length - newTransactions.length,
+    };
   });
