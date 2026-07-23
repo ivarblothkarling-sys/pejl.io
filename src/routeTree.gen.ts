@@ -15,6 +15,7 @@ import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
+import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe-webhook'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedInstallningarRouteImport } from './routes/_authenticated/installningar'
@@ -51,6 +52,11 @@ const IndexRoute = IndexRouteImport.update({
 const ShareTokenRoute = ShareTokenRouteImport.update({
   id: '/share/$token',
   path: '/share/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
+  id: '/api/stripe-webhook',
+  path: '/api/stripe-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiChatRoute = ApiChatRouteImport.update({
@@ -106,6 +112,7 @@ export interface FileRoutesByFullPath {
   '/installningar': typeof AuthenticatedInstallningarRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/stripe-webhook': typeof ApiStripeWebhookRoute
   '/share/$token': typeof ShareTokenRoute
   '/auth/fortnox/callback': typeof AuthFortnoxCallbackRoute
   '/auth/tink/callback': typeof AuthTinkCallbackRoute
@@ -121,6 +128,7 @@ export interface FileRoutesByTo {
   '/installningar': typeof AuthenticatedInstallningarRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/stripe-webhook': typeof ApiStripeWebhookRoute
   '/share/$token': typeof ShareTokenRoute
   '/auth/fortnox/callback': typeof AuthFortnoxCallbackRoute
   '/auth/tink/callback': typeof AuthTinkCallbackRoute
@@ -138,6 +146,7 @@ export interface FileRoutesById {
   '/_authenticated/installningar': typeof AuthenticatedInstallningarRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/stripe-webhook': typeof ApiStripeWebhookRoute
   '/share/$token': typeof ShareTokenRoute
   '/auth/fortnox/callback': typeof AuthFortnoxCallbackRoute
   '/auth/tink/callback': typeof AuthTinkCallbackRoute
@@ -155,6 +164,7 @@ export interface FileRouteTypes {
     | '/installningar'
     | '/onboarding'
     | '/api/chat'
+    | '/api/stripe-webhook'
     | '/share/$token'
     | '/auth/fortnox/callback'
     | '/auth/tink/callback'
@@ -170,6 +180,7 @@ export interface FileRouteTypes {
     | '/installningar'
     | '/onboarding'
     | '/api/chat'
+    | '/api/stripe-webhook'
     | '/share/$token'
     | '/auth/fortnox/callback'
     | '/auth/tink/callback'
@@ -186,6 +197,7 @@ export interface FileRouteTypes {
     | '/_authenticated/installningar'
     | '/_authenticated/onboarding'
     | '/api/chat'
+    | '/api/stripe-webhook'
     | '/share/$token'
     | '/auth/fortnox/callback'
     | '/auth/tink/callback'
@@ -198,6 +210,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRouteWithChildren
   IntegritetspolicyRoute: typeof IntegritetspolicyRoute
   ApiChatRoute: typeof ApiChatRoute
+  ApiStripeWebhookRoute: typeof ApiStripeWebhookRoute
   ShareTokenRoute: typeof ShareTokenRoute
 }
 
@@ -243,6 +256,13 @@ declare module '@tanstack/react-router' {
       path: '/share/$token'
       fullPath: '/share/$token'
       preLoaderRoute: typeof ShareTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/stripe-webhook': {
+      id: '/api/stripe-webhook'
+      path: '/api/stripe-webhook'
+      fullPath: '/api/stripe-webhook'
+      preLoaderRoute: typeof ApiStripeWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/chat': {
@@ -342,6 +362,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRouteWithChildren,
   IntegritetspolicyRoute: IntegritetspolicyRoute,
   ApiChatRoute: ApiChatRoute,
+  ApiStripeWebhookRoute: ApiStripeWebhookRoute,
   ShareTokenRoute: ShareTokenRoute,
 }
 export const routeTree = rootRouteImport

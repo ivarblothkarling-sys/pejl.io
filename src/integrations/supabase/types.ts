@@ -158,6 +158,7 @@ export type Database = {
       profiles: {
         Row: {
           accounting_provider: string
+          billing_status: string
           company_name: string | null
           country: string
           created_at: string
@@ -170,11 +171,14 @@ export type Database = {
           last_low_balance_alert_key: string | null
           last_weekly_summary_sent_at: string | null
           onboarding_completed: boolean
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
           threshold: number
           updated_at: string
         }
         Insert: {
           accounting_provider?: string
+          billing_status?: string
           company_name?: string | null
           country?: string
           created_at?: string
@@ -187,11 +191,14 @@ export type Database = {
           last_low_balance_alert_key?: string | null
           last_weekly_summary_sent_at?: string | null
           onboarding_completed?: boolean
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
           threshold?: number
           updated_at?: string
         }
         Update: {
           accounting_provider?: string
+          billing_status?: string
           company_name?: string | null
           country?: string
           created_at?: string
@@ -204,6 +211,8 @@ export type Database = {
           last_low_balance_alert_key?: string | null
           last_weekly_summary_sent_at?: string | null
           onboarding_completed?: boolean
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
           threshold?: number
           updated_at?: string
         }

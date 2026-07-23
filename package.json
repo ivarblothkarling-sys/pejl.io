@@ -73,6 +73,7 @@
     "recharts": "^2.15.0",
     "sonner": "^2.0.7",
     "streamdown": "^2.5.0",
+    "stripe": "^22.3.2",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.1",
     "tw-animate-css": "^1.3.4",

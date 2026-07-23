@@ -12,6 +12,8 @@ Likviditetsprognos i realtid för svenska småföretagare. Kopplar Fortnox + Tin
 - **AI:** Claude via Lovable AI Gateway (`LOVABLE_API_KEY`, ingen egen Anthropic-nyckel behövs).
 - **Mejl:** Resend via Lovable-connector (`RESEND_API_KEY` injektas som env-var).
 - **Integrationer:** Fortnox OAuth (bokföringsdata), Tink OAuth (banksaldo).
+- **Betalning:** Stripe Checkout (`solo` 299 kr/mån, `solo_plus` 499 kr/mån, 30 dagars trial). Webhook på `/api/stripe-webhook` sätter `profiles.billing_status`.
+- **Error monitoring:** Sentry (`@sentry/cloudflare` på servern, `@sentry/react` i klienten).
 
 ## Kom igång lokalt
 
@@ -71,6 +73,8 @@ Alla secrets finns i **Lovable Cloud → Secrets** och injektas som env-vars i s
 | `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` | Auto | Browser-klient | Publikt |
 | `SENTRY_DSN` | Sentry-projekt | Error monitoring på servern (`@sentry/cloudflare` i `src/server.ts`) | Server |
 | `VITE_SENTRY_DSN` | Sentry-projekt (samma DSN som ovan) | Error monitoring i browsern (`@sentry/react` i `src/router.tsx`) — måste ha `VITE_`-prefix för att nå klientbundlen, se regler ovan | Publikt (DSN:er är inte hemliga) |
+| `STRIPE_SECRET_KEY` | Stripe Dashboard | Skapar Checkout Sessions (`lib/api/billing.functions.ts`) | Server (kritisk) |
+| `STRIPE_WEBHOOK_SECRET` | Stripe Dashboard → Webhooks (endpoint `/api/stripe-webhook`) | Verifierar att webhook-anrop verkligen kommer från Stripe | Server (kritisk) |
 
 ## Databas
 
