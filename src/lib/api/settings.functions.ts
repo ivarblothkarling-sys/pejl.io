@@ -101,10 +101,7 @@ export const importSieData = createServerFn({ method: "POST" })
     };
     if (data.companyName) profileUpdate.company_name = data.companyName;
 
-    const { error: pErr } = await supabase
-      .from("profiles")
-      .update(profileUpdate)
-      .eq("id", userId);
+    const { error: pErr } = await supabase.from("profiles").update(profileUpdate).eq("id", userId);
     if (pErr) throw new Error(pErr.message);
 
     // Dedup mot redan importerade SIE-rader istället för att blint tömma och
@@ -146,4 +143,95 @@ export const importSieData = createServerFn({ method: "POST" })
       count: newTransactions.length,
       skipped: data.transactions.length - newTransactions.length,
     };
+  });
+
+function csvEscape(value: unknown): string {
+  const s = String(value ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** GDPR-dataportabilitet: exporterar användarens egna transaktioner som CSV. */
+export const exportTransactionsCsv = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("transactions")
+      .select("*")
+      .eq("user_id", context.userId)
+      .order("due_date", { ascending: true });
+    if (error) throw new Error(error.message);
+
+    const headers = [
+      "id",
+      "due_date",
+      "kind",
+      "amount",
+      "description",
+      "paid",
+      "source",
+      "approval_status",
+      "created_at",
+    ];
+    const rows = (data ?? []).map((t) =>
+      [
+        t.id,
+        t.due_date,
+        t.kind,
+        t.amount,
+        t.description,
+        t.paid,
+        t.source,
+        t.approval_status ?? "",
+        t.created_at,
+      ]
+        .map(csvEscape)
+        .join(","),
+    );
+    const csv = [headers.join(","), ...rows].join("\n");
+
+    return {
+      csv,
+      filename: `pejl-transaktioner-${new Date().toISOString().slice(0, 10)}.csv`,
+    };
+  });
+
+const ACCOUNT_DATA_TABLES = [
+  "transactions",
+  "fortnox_connections",
+  "tink_connections",
+  "chat_messages",
+  "share_tokens",
+] as const;
+
+/**
+ * GDPR-radering: tar bort ALL data kopplad till den inloggade användaren,
+ * inklusive Supabase Auth-kontot. Irreversibelt.
+ *
+ * Barntabellerna raderas explicit (RLS-scopat via context.supabase, dvs.
+ * kan bara träffa den anropande användarens egna rader) innan profiles och
+ * till sist auth-användaren tas bort. Samtliga user_id-kolumner i schemat
+ * har dessutom ON DELETE CASCADE mot auth.users, så det sista steget
+ * (auth.admin.deleteUser) städar bort även rader i tabeller som inte listas
+ * explicit här (t.ex. user_roles, provider_waitlist, agency_clients) — de
+ * explicita raderingarna ovan är för tydlighet/auditerbarhet, inte det enda
+ * som faktiskt städar undan datan.
+ */
+export const deleteUserAccount = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+
+    for (const table of ACCOUNT_DATA_TABLES) {
+      const { error } = await supabase.from(table).delete().eq("user_id", userId);
+      if (error) throw new Error(`Kunde inte radera ${table}: ${error.message}`);
+    }
+
+    const { error: profileErr } = await supabase.from("profiles").delete().eq("id", userId);
+    if (profileErr) throw new Error(`Kunde inte radera profil: ${profileErr.message}`);
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: authErr } = await supabaseAdmin.auth.admin.deleteUser(userId);
+    if (authErr) throw new Error(`Kunde inte radera användarkontot: ${authErr.message}`);
+
+    return { ok: true };
   });

@@ -1,10 +1,23 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, BellRing, Check, FileUp, Landmark, Link2, Loader2, X } from "lucide-react";
+import {
+  ArrowLeft,
+  BellRing,
+  Check,
+  Download,
+  FileUp,
+  Landmark,
+  Link2,
+  Loader2,
+  Trash2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -12,6 +25,8 @@ import {
   updateUserSettings,
   joinProviderWaitlist,
   importSieData,
+  exportTransactionsCsv,
+  deleteUserAccount,
 } from "@/lib/api/settings.functions";
 import { updatePendingApprovalPreference } from "@/lib/api/finance.functions";
 import { getActiveShareLinks, revokeShareLink } from "@/lib/api/share.functions";
@@ -22,6 +37,8 @@ import { AVAILABLE_LANGUAGES, type Language } from "@/lib/i18n/strings";
 import { useT } from "@/lib/i18n/useT";
 import { decodeCP437, parseSie, deriveForecast } from "@/lib/accounting/sie";
 import { formatDateSv } from "@/lib/forecast";
+
+const DELETE_CONFIRM_PHRASE = "RADERA";
 
 const getTinkRedirectUri = () => "https://pejl.io/auth/tink/callback";
 
@@ -63,6 +80,10 @@ function SettingsPage() {
   >([]);
   const [revokingToken, setRevokingToken] = useState<string | null>(null);
   const [pendingApprovalSaving, setPendingApprovalSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     getUserSettings()
@@ -255,6 +276,41 @@ function SettingsPage() {
     } finally {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleExportCsv = async () => {
+    setExporting(true);
+    try {
+      const { csv, filename } = await exportTransactionsCsv();
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Data exporterad");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Kunde inte exportera data");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== DELETE_CONFIRM_PHRASE) return;
+    setDeleting(true);
+    try {
+      await deleteUserAccount();
+      await supabase.auth.signOut();
+      toast.success("Ditt konto och all din data har raderats.");
+      navigate({ to: "/" });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Kunde inte radera kontot");
+      setDeleting(false);
     }
   };
 
@@ -532,12 +588,86 @@ function SettingsPage() {
           </div>
         </section>
 
+        {/* Ditt konto */}
+        <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+          <h2 className="text-base font-semibold">Ditt konto</h2>
+          <p className="text-xs text-muted-foreground mt-0.5 mb-4">
+            Exportera din data eller radera ditt konto permanent, enligt GDPR.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="outline" size="sm" onClick={handleExportCsv} disabled={exporting}>
+              <Download className="size-4" />
+              {exporting ? "Exporterar…" : "Exportera min data"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setDeleteConfirmText("");
+                setDeleteModalOpen(true);
+              }}
+              className="text-destructive hover:text-destructive border-destructive/30 hover:bg-destructive/10"
+            >
+              <Trash2 className="size-4" />
+              Radera mitt konto
+            </Button>
+          </div>
+        </section>
+
         <div>
           <Link to="/" className="text-sm text-primary hover:underline">
             ← {t("settings.back")}
           </Link>
         </div>
       </main>
+
+      {deleteModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-background/80 backdrop-blur flex items-center justify-center p-4"
+          onClick={() => !deleting && setDeleteModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-destructive/30 bg-card p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-semibold text-destructive">Radera mitt konto</h3>
+            <p className="text-sm text-muted-foreground">
+              Det här raderar permanent alla dina transaktioner, kopplingar till Fortnox och Tink,
+              chatthistorik, delade länkar och ditt inloggningskonto. Det går inte att ångra.
+            </p>
+            <div>
+              <Label htmlFor="delete-confirm">
+                Skriv <span className="font-mono font-semibold">{DELETE_CONFIRM_PHRASE}</span> för
+                att bekräfta
+              </Label>
+              <Input
+                id="delete-confirm"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                autoComplete="off"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setDeleteModalOpen(false)}
+                disabled={deleting}
+              >
+                Avbryt
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleDeleteAccount}
+                disabled={deleting || deleteConfirmText !== DELETE_CONFIRM_PHRASE}
+              >
+                {deleting ? "Raderar…" : "Radera permanent"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
