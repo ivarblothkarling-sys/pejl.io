@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
 import { acceptAgencyInvite } from "@/lib/api/agency.functions";
@@ -40,8 +41,9 @@ function AcceptInvitePage() {
 
         const result = await accept({ data: { token } });
         setStatus("ok");
-        setMessage(`Du är nu kopplad som ${result.clientName}.`);
+        setMessage(`Du är nu kopplad till ${result.agencyName}.`);
         setTimeout(() => {
+          toast.success(`Du är nu kopplad till ${result.agencyName}`);
           navigate({ to: "/dashboard" });
         }, 1200);
       } catch (e) {

@@ -2,9 +2,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { formatSEK } from "@/lib/forecast";
 
 const TINK_SCOPES = "accounts:read,balances:read,transactions:read,user:read";
 const TINK_REDIRECT_URI = "https://pejl.io/auth/tink/callback";
+const BANK_DISCREPANCY_THRESHOLD = 500;
 
 async function syncTinkForUser(userId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -29,6 +31,34 @@ async function syncTinkForUser(userId: string) {
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", userId);
+
+  // Jämför banksaldot mot Fortnox-saldot (profiles.current_balance) — en
+  // stor avvikelse indikerar obetalda fakturor eller transaktioner som
+  // ännu inte bokförts i Fortnox. Egen try/catch så ett fel här inte
+  // förstör den redan lyckade saldo-uppdateringen ovan.
+  try {
+    const { data: profile, error: profileErr } = await supabaseAdmin
+      .from("profiles")
+      .select("current_balance")
+      .eq("id", userId)
+      .maybeSingle();
+    if (profileErr) throw new Error(profileErr.message);
+    if (profile) {
+      const fortnoxBalance = Number(profile.current_balance) || 0;
+      const diff = balance - fortnoxBalance;
+      if (Math.abs(diff) > BANK_DISCREPANCY_THRESHOLD) {
+        const { createNotification } = await import("@/lib/api/notifications.functions");
+        await createNotification({
+          userId,
+          type: "bank_discrepancy",
+          title: "Avvikelse mellan bank och Fortnox",
+          body: `Banksaldo ${formatSEK(balance)} skiljer sig från Fortnox-saldo ${formatSEK(fortnoxBalance)} med ${formatSEK(Math.abs(diff))} — troligen obetalda fakturor eller ej bokförda transaktioner.`,
+        });
+      }
+    }
+  } catch (err) {
+    console.error("[Tink] Kunde inte kontrollera saldoavvikelse mot Fortnox:", err);
+  }
 
   // Matcha bokförda banktransaktioner mot öppna kundfakturor (±100 kr, ±3
   // dagar) och markera dem betalda. Inkapslat separat från saldo-synken ovan

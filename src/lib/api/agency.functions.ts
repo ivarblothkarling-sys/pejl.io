@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { nanoid } from "nanoid";
 import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
@@ -16,12 +17,11 @@ export type AgencyClient = {
   client_user_id: string | null;
 };
 
-const RED_WITHIN_DAYS = 7;
-
-function deriveStatus(breachDate: string | null): "green" | "yellow" | "red" {
-  if (!breachDate) return "green";
-  const daysUntilBreach = Math.round((new Date(breachDate).getTime() - Date.now()) / 86400000);
-  return daysUntilBreach <= RED_WITHIN_DAYS ? "red" : "yellow";
+/** red under gränsen, yellow under 2x gränsen, annars green — baserat på lägsta prognossaldo 30 dagar framåt. */
+function deriveStatus(minBalance: number, threshold: number): "green" | "yellow" | "red" {
+  if (minBalance < threshold) return "red";
+  if (minBalance < threshold * 2) return "yellow";
+  return "green";
 }
 
 export const getAgencyClients = createServerFn({ method: "GET" })
@@ -49,6 +49,7 @@ export const getAgencyClients = createServerFn({ method: "GET" })
         threshold: number;
         breachDate: string | null;
         breachAmount: number | null;
+        minBalance: number;
       }
     >();
 
@@ -101,6 +102,7 @@ export const getAgencyClients = createServerFn({ method: "GET" })
           threshold: Number(p.threshold) || 0,
           breachDate: forecast.breachDate,
           breachAmount: forecast.breachAmount,
+          minBalance: forecast.minBalance,
         });
       }
     }
@@ -118,7 +120,7 @@ export const getAgencyClients = createServerFn({ method: "GET" })
         threshold: live.threshold,
         next_warning_date: live.breachDate,
         next_warning_amount: live.breachAmount,
-        status: deriveStatus(live.breachDate),
+        status: deriveStatus(live.minBalance, live.threshold),
       };
     });
 
@@ -208,7 +210,7 @@ export const inviteAgencyClient = createServerFn({ method: "POST" })
       .eq("id", userId)
       .maybeSingle();
 
-    const token = crypto.randomUUID().replace(/-/g, "");
+    const token = nanoid();
     const acceptUrl = `https://pejl.io/accept-invite?token=${token}`;
     const { error: insertErr } = await supabase.from("agency_invites").insert({
       agency_user_id: userId,
@@ -242,7 +244,7 @@ export const acceptAgencyInvite = createServerFn({ method: "POST" })
 
     const { data: invite, error: inviteErr } = await supabaseAdmin
       .from("agency_invites")
-      .select("id, agency_client_id, accepted_at")
+      .select("id, agency_client_id, agency_user_id, accepted_at")
       .eq("token", data.token)
       .maybeSingle();
     if (inviteErr) throw new Error(inviteErr.message);
@@ -258,6 +260,12 @@ export const acceptAgencyInvite = createServerFn({ method: "POST" })
     if (!client) throw new Error("Klienten hittades inte längre.");
     if (client.client_user_id) throw new Error("Den här klienten är redan kopplad till ett konto.");
 
+    const { data: agencyProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("company_name")
+      .eq("id", invite.agency_user_id)
+      .maybeSingle();
+
     const { error: linkErr } = await supabaseAdmin
       .from("agency_clients")
       .update({ client_user_id: context.userId, updated_at: new Date().toISOString() })
@@ -270,5 +278,9 @@ export const acceptAgencyInvite = createServerFn({ method: "POST" })
       .eq("id", invite.id);
     if (acceptErr) throw new Error(acceptErr.message);
 
-    return { ok: true, clientName: client.name as string };
+    return {
+      ok: true,
+      clientName: client.name as string,
+      agencyName: agencyProfile?.company_name ?? "din byrå",
+    };
   });

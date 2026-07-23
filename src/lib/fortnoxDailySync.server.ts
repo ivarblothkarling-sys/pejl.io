@@ -6,6 +6,67 @@ import { computeForecast, formatSEK, type Tx } from "@/lib/forecast";
 const CONSECUTIVE_FAILURE_THRESHOLD = 3;
 const LOW_BALANCE_REMINDER_DAYS = 7;
 const INACTIVITY_THRESHOLD_MS = 24 * 60 * 60 * 1000;
+const PAYMENT_OVERDUE_DEDUP_DAYS = 3;
+
+/**
+ * Efter en lyckad synk: hitta kundfakturor som är förfallna (due_date <
+ * idag) och fortfarande obetalda (paid_at IS NULL — se paid_at-kommentaren
+ * i forecast.ts), och skapa en payment_overdue-notis per faktura — men
+ * bara om ingen sådan notis redan skapats för SAMMA faktura de senaste
+ * PAYMENT_OVERDUE_DEDUP_DAYS dagarna (kollas via notifications.related_id,
+ * inte body-text).
+ */
+async function checkOverdueInvoicesForUser(userId: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const now = new Date();
+  const todayUtcMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const todayIso = new Date(todayUtcMs).toISOString().slice(0, 10);
+
+  const { data: overdueRows, error } = await supabaseAdmin
+    .from("transactions")
+    .select("id, amount, due_date, description")
+    .eq("user_id", userId)
+    .eq("kind", "income")
+    .is("paid_at", null)
+    .lt("due_date", todayIso);
+  if (error) throw new Error(error.message);
+  if (!overdueRows || overdueRows.length === 0) return;
+
+  const dedupCutoffIso = new Date(
+    now.getTime() - PAYMENT_OVERDUE_DEDUP_DAYS * 86_400_000,
+  ).toISOString();
+  const { createNotification } = await import("@/lib/api/notifications.functions");
+
+  for (const tx of overdueRows) {
+    try {
+      const { data: existing, error: existingErr } = await supabaseAdmin
+        .from("notifications")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("type", "payment_overdue")
+        .eq("related_id", tx.id)
+        .gte("created_at", dedupCutoffIso)
+        .limit(1)
+        .maybeSingle();
+      if (existingErr) throw new Error(existingErr.message);
+      if (existing) continue;
+
+      const days = Math.round((todayUtcMs - new Date(tx.due_date).getTime()) / 86_400_000);
+      await createNotification({
+        userId,
+        type: "payment_overdue",
+        title: "Försenad betalning",
+        body: `Faktura på ${formatSEK(Number(tx.amount))} från ${tx.description} är ${days} dagar försenad.`,
+        relatedId: tx.id,
+      });
+    } catch (txErr) {
+      console.error(
+        `[fortnoxDailySync] Kunde inte hantera försenad faktura ${tx.id} för ${userId}:`,
+        txErr,
+      );
+    }
+  }
+}
 
 /**
  * Efter en lyckad synk: varna användare som inte varit inne i appen på minst
@@ -117,6 +178,15 @@ export async function runDailyFortnoxSync() {
         await checkLowBalanceReminderForUser(conn.user_id);
       } catch (warnErr) {
         console.error(`[fortnoxDailySync] Kassavarning misslyckades för ${conn.user_id}:`, warnErr);
+      }
+
+      try {
+        await checkOverdueInvoicesForUser(conn.user_id);
+      } catch (overdueErr) {
+        console.error(
+          `[fortnoxDailySync] Försenad-faktura-koll misslyckades för ${conn.user_id}:`,
+          overdueErr,
+        );
       }
     } catch (err) {
       failed += 1;

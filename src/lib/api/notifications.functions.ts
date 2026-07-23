@@ -17,6 +17,8 @@ export async function createNotification(input: {
   type: NotificationType;
   title: string;
   body?: string | null;
+  /** Kopplar notisen till en rad i en annan tabell (t.ex. en transaktion) — används för dedup. */
+  relatedId?: string | null;
 }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { error } = await supabaseAdmin.from("notifications").insert({
@@ -24,6 +26,7 @@ export async function createNotification(input: {
     type: input.type,
     title: input.title,
     body: input.body ?? null,
+    related_id: input.relatedId ?? null,
   });
   if (error) throw new Error(error.message);
 }
