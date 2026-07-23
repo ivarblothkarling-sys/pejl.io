@@ -1,0 +1,14 @@
+# Kompletterar (går INTE i konflikt med) den wrangler-konfig som Nitro
+# genererar vid build (.output/server/wrangler.json). Nitro slår ihop denna
+# fil med sina egna beräknade värden och force-overridar alltid `name`,
+# `main`, `assets` och `compatibility_date` — sätt därför INGET av det här,
+# bara det som är specifikt för det här projektet (cron-triggers m.m.).
+# Se node_modules/nitro/dist/_presets.mjs (writeWranglerConfig/readWranglerConfig)
+# för exakt merge-logik.
+
+[triggers]
+# 05:00 UTC = 06:00 CET (vintertid). Cloudflare Cron Triggers körs alltid i
+# UTC och följer INTE sommartid — under CEST (sommartid, UTC+2) blir det i
+# praktiken 07:00 lokal tid istället för 06:00. Justera manuellt två gånger
+# om året om exakt 06:00 året runt är ett hårt krav.
+crons = ["0 5 * * *"]

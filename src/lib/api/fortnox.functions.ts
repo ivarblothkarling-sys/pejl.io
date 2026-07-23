@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-async function syncFortnoxForUser(userId: string) {
+export async function syncFortnoxForUser(userId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data: conn, error: connErr } = await supabaseAdmin
     .from("fortnox_connections")

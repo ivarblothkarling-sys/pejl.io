@@ -79,3 +79,68 @@ export async function sendLowBalanceEmail({ to, companyName, forecast }: LowBala
     return { ok: false as const, error: "fetch_failed" };
   }
 }
+
+export type FortnoxSyncFailedEmailInput = {
+  to: string;
+  companyName: string;
+  failureReason: string;
+};
+
+/** Skickas när den dagliga Fortnox-synken har misslyckats flera gånger i rad för en användare. */
+export async function sendFortnoxSyncFailedEmail({
+  to,
+  companyName,
+  failureReason,
+}: FortnoxSyncFailedEmailInput) {
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) {
+    console.error("[emailAlert] Missing RESEND_API_KEY");
+    return { ok: false as const, error: "missing_keys" };
+  }
+
+  const subject = `Fortnox-synkningen för ${companyName} har misslyckats`;
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a">
+      <h1 style="font-size:20px;margin:0 0 16px">⚠️ Fortnox-synken har slutat fungera</h1>
+      <p style="font-size:15px;line-height:1.5;margin:0 0 16px">
+        Hej! Den automatiska dagliga synken mot Fortnox för <strong>${companyName}</strong> har
+        misslyckats flera dagar i rad. Prognosen i Pejl kan vara inaktuell tills kopplingen är
+        återställd.
+      </p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
+        <tr><td style="padding:8px 0;color:#64748b">Senaste felmeddelande</td><td style="padding:8px 0;text-align:right;color:#dc2626"><strong>${failureReason}</strong></td></tr>
+      </table>
+      <p style="font-size:14px;line-height:1.5;color:#475569;margin:16px 0">
+        Vanligast är att Fortnox-kopplingen behöver återanslutas. Gå till Inställningar i Pejl och
+        koppla Fortnox på nytt.
+      </p>
+      <a href="https://pejl.io/installningar"
+         style="display:inline-block;background:#0f172a;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">
+        Öppna inställningar →
+      </a>
+      <p style="font-size:12px;color:#94a3b8;margin-top:32px">
+        Du får detta mejl eftersom din Fortnox-koppling i Pejl inte kunnat synkas automatiskt.
+      </p>
+    </div>
+  `;
+
+  try {
+    const res = await fetch(RESEND_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${resendKey}`,
+      },
+      body: JSON.stringify({ from: FROM, to: [to], subject, html }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[emailAlert] Resend ${res.status}: ${body}`);
+      return { ok: false as const, error: `resend_${res.status}` };
+    }
+    return { ok: true as const };
+  } catch (err) {
+    console.error("[emailAlert] fetch failed", err);
+    return { ok: false as const, error: "fetch_failed" };
+  }
+}

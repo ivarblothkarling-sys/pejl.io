@@ -116,9 +116,12 @@ export type Database = {
       fortnox_connections: {
         Row: {
           access_token: string
+          consecutive_sync_failures: number
           created_at: string
           expires_at: string | null
           id: string
+          last_sync_at: string | null
+          last_sync_error: string | null
           refresh_token: string
           scope: string | null
           updated_at: string
@@ -126,9 +129,12 @@ export type Database = {
         }
         Insert: {
           access_token: string
+          consecutive_sync_failures?: number
           created_at?: string
           expires_at?: string | null
           id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
           refresh_token: string
           scope?: string | null
           updated_at?: string
@@ -136,9 +142,12 @@ export type Database = {
         }
         Update: {
           access_token?: string
+          consecutive_sync_failures?: number
           created_at?: string
           expires_at?: string | null
           id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
           refresh_token?: string
           scope?: string | null
           updated_at?: string
