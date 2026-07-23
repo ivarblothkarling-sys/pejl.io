@@ -61,6 +61,21 @@ export const getDashboardData = createServerFn({ method: "GET" })
       const p = profile as { last_low_balance_alert_key?: string | null; company_name?: string | null };
       const alertKey = `${forecast.breachDate}:${Math.round((forecast.breachAmount ?? 0))}`;
       if (p.last_low_balance_alert_key !== alertKey) {
+        // Skapa alltid en in-app-notis vid en ny gränsöverträdelse, oavsett
+        // om mejlet nedan går att skicka (t.ex. saknad RESEND_API_KEY eller
+        // ingen e-post i claims).
+        try {
+          const { createNotification } = await import("@/lib/api/notifications.functions");
+          await createNotification({
+            userId,
+            type: "forecast_warning",
+            title: "Saldot riskerar gå under din gräns",
+            body: `Prognosen visar att saldot går under din varningsgräns ${forecast.breachDate}.`,
+          });
+        } catch (err) {
+          console.error("[finance] notification create failed", err);
+        }
+
         const email = context.claims?.email as string | undefined;
         if (email) {
           try {

@@ -53,6 +53,18 @@ export async function runDailyFortnoxSync() {
 
       if (failures === CONSECUTIVE_FAILURE_THRESHOLD) {
         try {
+          const { createNotification } = await import("@/lib/api/notifications.functions");
+          await createNotification({
+            userId: conn.user_id,
+            type: "sync_failed",
+            title: "Fortnox-synken har slutat fungera",
+            body: message,
+          });
+        } catch (notifErr) {
+          console.error(`[fortnoxDailySync] Kunde inte skapa notis för ${conn.user_id}:`, notifErr);
+        }
+
+        try {
           const [{ data: userRes }, { data: profile }] = await Promise.all([
             supabaseAdmin.auth.admin.getUserById(conn.user_id),
             supabaseAdmin

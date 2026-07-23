@@ -36,6 +36,7 @@ import {
   PromptInputTextarea,
 } from "@/components/ai-elements/prompt-input";
 import { Shimmer } from "@/components/ai-elements/shimmer";
+import { NotificationBell } from "@/components/NotificationBell";
 import { computeForecast, computeSuggestions, formatDateSv, formatSEK, type Tx } from "@/lib/forecast";
 import {
   generateWeeklySummary,
@@ -508,6 +509,7 @@ function DashboardPage() {
                 <SettingsIcon className="size-4" /> Inställningar
               </Button>
             </Link>
+            <NotificationBell />
             <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-muted-foreground">
               <LogOut className="size-4" /> Logga ut
             </Button>

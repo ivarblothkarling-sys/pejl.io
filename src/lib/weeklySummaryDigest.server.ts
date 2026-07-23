@@ -66,6 +66,21 @@ export async function runWeeklySummaryDigest() {
         .from("profiles")
         .update({ last_weekly_summary_sent_at: new Date().toISOString() })
         .eq("id", conn.user_id);
+
+      try {
+        const { createNotification } = await import("@/lib/api/notifications.functions");
+        await createNotification({
+          userId: conn.user_id,
+          type: "weekly_summary",
+          title: "Ditt veckobrev är klart",
+          body: summary,
+        });
+      } catch (notifErr) {
+        console.error(
+          `[weeklySummaryDigest] Kunde inte skapa notis för ${conn.user_id}:`,
+          notifErr,
+        );
+      }
     } catch (err) {
       failed += 1;
       console.error(`[weeklySummaryDigest] Misslyckades för ${conn.user_id}:`, err);
