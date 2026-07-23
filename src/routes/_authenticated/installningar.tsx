@@ -733,8 +733,7 @@ function SettingsPage() {
           >
             <h3 className="font-semibold">Välj plan</h3>
             <p className="text-sm text-muted-foreground">
-              30 dagars gratis provperiod, avsluta när som helst. Du skickas vidare till Stripe för
-              betalning.
+              Du skickas vidare till Stripe för betalning.
             </p>
             <div className="space-y-2">
               <button
@@ -744,11 +743,16 @@ function SettingsPage() {
                 className="w-full rounded-lg border border-border p-4 text-left transition-colors hover:bg-secondary/40 disabled:opacity-60"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">Pejl Solo</span>
-                  <span className="text-sm tabular-nums">299 kr/mån</span>
+                  <span className="font-medium">Solo</span>
+                  <span className="text-sm tabular-nums">
+                    {upgradingPlan === "solo" ? "Förbereder…" : "299 kr/mån"}
+                  </span>
                 </div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  {upgradingPlan === "solo" ? "Förbereder…" : "För enskild firma"}
+                <div className="text-xs text-muted-foreground mt-1">
+                  För dig som vill ha koll på kassan 30 dagar framåt. Koppla Fortnox på 60 sekunder.
+                </div>
+                <div className="text-xs text-muted-foreground mt-1.5">
+                  30 dagars gratis provperiod · Ingen bindningstid
                 </div>
               </button>
               <button
@@ -758,11 +762,16 @@ function SettingsPage() {
                 className="w-full rounded-lg border border-border p-4 text-left transition-colors hover:bg-secondary/40 disabled:opacity-60"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">Pejl Solo+</span>
-                  <span className="text-sm tabular-nums">499 kr/mån</span>
+                  <span className="font-medium">Solo Plus</span>
+                  <span className="text-sm tabular-nums">
+                    {upgradingPlan === "solo_plus" ? "Förbereder…" : "499 kr/mån"}
+                  </span>
                 </div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  {upgradingPlan === "solo_plus" ? "Förbereder…" : "För fler bolag och byråer"}
+                <div className="text-xs text-muted-foreground mt-1">
+                  Allt i Solo plus pushnotiser, skattebevakning och prioriterad support.
+                </div>
+                <div className="text-xs text-muted-foreground mt-1.5">
+                  30 dagars gratis provperiod · Ingen bindningstid
                 </div>
               </button>
             </div>
