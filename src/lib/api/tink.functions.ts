@@ -30,7 +30,57 @@ async function syncTinkForUser(userId: string) {
     })
     .eq("user_id", userId);
 
-  return { balance, currency };
+  // Matcha bokförda banktransaktioner mot öppna kundfakturor (±100 kr, ±3
+  // dagar) och markera dem betalda. Inkapslat separat från saldo-synken ovan
+  // så att ett fel här (t.ex. fel API-shape) inte förstör den redan
+  // fungerande saldo-uppdateringen.
+  let matchedCount = 0;
+  try {
+    const { fetchTinkTransactions } = await import("@/lib/tinkApi.server");
+    const bankTxs = await fetchTinkTransactions(accessToken);
+    const { data: openInvoices, error: openErr } = await supabaseAdmin
+      .from("transactions")
+      .select("id, amount, due_date")
+      .eq("user_id", userId)
+      .eq("kind", "income")
+      .eq("paid", false);
+    if (openErr) throw new Error(openErr.message);
+
+    const MATCH_AMOUNT_TOLERANCE = 100;
+    const MATCH_DAY_TOLERANCE = 3;
+    const DAY_MS = 86_400_000;
+    const usedInvoiceIds = new Set<string>();
+
+    for (const bankTx of bankTxs) {
+      if (bankTx.amount <= 0) continue; // bara inbetalningar kan matcha kundfakturor
+      const bookingMs = new Date(bankTx.bookingDate).getTime();
+
+      const candidates = (openInvoices ?? [])
+        .filter((inv) => !usedInvoiceIds.has(inv.id))
+        .map((inv) => ({
+          inv,
+          amountDiff: Math.abs(Number(inv.amount) - bankTx.amount),
+          dayDiff: Math.abs((new Date(inv.due_date).getTime() - bookingMs) / DAY_MS),
+        }))
+        .filter((c) => c.amountDiff <= MATCH_AMOUNT_TOLERANCE && c.dayDiff <= MATCH_DAY_TOLERANCE)
+        .sort((a, b) => a.amountDiff - b.amountDiff || a.dayDiff - b.dayDiff);
+
+      const match = candidates[0]?.inv;
+      if (match) {
+        usedInvoiceIds.add(match.id);
+        const { error: updErr } = await supabaseAdmin
+          .from("transactions")
+          .update({ paid: true, paid_at: bankTx.bookingDate, approval_status: "paid" })
+          .eq("id", match.id);
+        if (updErr) throw new Error(updErr.message);
+        matchedCount++;
+      }
+    }
+  } catch (err) {
+    console.error("[Tink] Transaktionsmatchning misslyckades:", err);
+  }
+
+  return { balance, currency, matchedCount };
 }
 
 export const getTinkAuthUrl = createServerFn({ method: "POST" })

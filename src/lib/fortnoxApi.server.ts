@@ -220,3 +220,46 @@ export async function fetchFortnoxOpenTransactions(
     transactions,
   };
 }
+
+export interface FortnoxPaidInvoice {
+  /** Matchar FortnoxFetchedTx.externalId — så syncFortnox kan hitta rätt rad i transactions. */
+  externalId: string;
+  finalPayDate: string;
+}
+
+/**
+ * Hämtar kund- och leverantörsfakturor som blivit fullbetalda (FinalPayDate
+ * satt) sedan de senast var öppna. `filter=fullypaid` är Fortnox dokumenterade
+ * filtervärde för Invoices/SupplierInvoices-resurserna — kunde inte
+ * verifieras mot ett live-konto här, så varje delanrop är inkapslat separat
+ * och loggar men kastar inte om det skulle avvisas, för att inte slå ut den
+ * redan fungerande synken av öppna fakturor.
+ */
+export async function fetchFortnoxFullyPaidInvoices(
+  accessToken: string,
+): Promise<FortnoxPaidInvoice[]> {
+  const [invRes, supRes] = await Promise.all([
+    fortnoxGet<FortnoxInvoicesResponse>("/invoices?filter=fullypaid", accessToken).catch((err) => {
+      console.error("[Fortnox] Kunde inte hämta fullbetalda kundfakturor:", err);
+      return {} as FortnoxInvoicesResponse;
+    }),
+    fortnoxGet<FortnoxSupplierInvoicesResponse>(
+      "/supplierinvoices?filter=fullypaid",
+      accessToken,
+    ).catch((err) => {
+      console.error("[Fortnox] Kunde inte hämta fullbetalda leverantörsfakturor:", err);
+      return {} as FortnoxSupplierInvoicesResponse;
+    }),
+  ]);
+
+  const paid: FortnoxPaidInvoice[] = [];
+  for (const inv of invRes.Invoices ?? []) {
+    if (!inv.FinalPayDate || !inv.DocumentNumber) continue;
+    paid.push({ externalId: `inv-${inv.DocumentNumber}`, finalPayDate: inv.FinalPayDate });
+  }
+  for (const sup of supRes.SupplierInvoices ?? []) {
+    if (!sup.FinalPayDate || !sup.GivenNumber) continue;
+    paid.push({ externalId: `sup-${sup.GivenNumber}`, finalPayDate: sup.FinalPayDate });
+  }
+  return paid;
+}

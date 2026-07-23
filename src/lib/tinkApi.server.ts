@@ -150,3 +150,56 @@ export async function fetchTinkBalance(
   }
   return { balance: Math.round(total * 100) / 100, currency };
 }
+
+interface TinkTransactionsResponse {
+  transactions?: Array<{
+    id?: string;
+    amount?: { value?: { unscaledValue?: string; scale?: string }; currencyCode?: string };
+    dates?: { booked?: string };
+    descriptions?: { display?: string; original?: string };
+  }>;
+  nextPageToken?: string;
+}
+
+export interface TinkFetchedTransaction {
+  id: string;
+  /** Positivt = inbetalning, negativt = utbetalning. */
+  amount: number;
+  bookingDate: string;
+  description: string;
+}
+
+/** Hämtar bokförda transaktioner (paginerat) för matchning mot öppna kundfakturor. */
+export async function fetchTinkTransactions(
+  accessToken: string,
+): Promise<TinkFetchedTransaction[]> {
+  const transactions: TinkFetchedTransaction[] = [];
+  let pageToken: string | undefined;
+  let pages = 0;
+  do {
+    const query = new URLSearchParams({ pageSize: "100" });
+    if (pageToken) query.set("pageToken", pageToken);
+    const res = await fetch(`${TINK_API_BASE}/data/v2/transactions?${query.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Tink transactions-anrop misslyckades: ${res.status} ${text}`);
+    }
+    const json = (await res.json()) as TinkTransactionsResponse;
+    for (const t of json.transactions ?? []) {
+      const amount = parseAmount(t.amount?.value);
+      const bookingDate = t.dates?.booked;
+      if (amount == null || !bookingDate || !t.id) continue;
+      transactions.push({
+        id: t.id,
+        amount,
+        bookingDate,
+        description: t.descriptions?.display ?? t.descriptions?.original ?? "",
+      });
+    }
+    pageToken = json.nextPageToken;
+    pages++;
+  } while (pageToken && pages < 10);
+  return transactions;
+}

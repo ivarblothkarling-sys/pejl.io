@@ -13,23 +13,57 @@ export async function syncFortnoxForUser(userId: string) {
   if (connErr) throw new Error(connErr.message);
   if (!conn) throw new Error("Ingen Fortnox-koppling hittad för den här användaren.");
 
-  const { ensureFreshFortnoxToken, fetchFortnoxOpenTransactions } = await import(
-    "@/lib/fortnoxApi.server"
-  );
+  const { ensureFreshFortnoxToken, fetchFortnoxOpenTransactions, fetchFortnoxFullyPaidInvoices } =
+    await import("@/lib/fortnoxApi.server");
   const accessToken = await ensureFreshFortnoxToken(conn);
-  const { companyName, transactions } = await fetchFortnoxOpenTransactions(accessToken);
+  const [{ companyName, transactions }, paidInvoices] = await Promise.all([
+    fetchFortnoxOpenTransactions(accessToken),
+    fetchFortnoxFullyPaidInvoices(accessToken),
+  ]);
 
-  // När riktig Fortnox-data finns ersätter den både tidigare Fortnox-rader och demo-data.
-  const { error: delErr } = await supabaseAdmin
+  // 1) Markera fakturor som blivit fullbetalda sedan de senast synkades som
+  // öppna — matchas mot befintliga rader via external_id (Fortnox
+  // dokument-/fakturanummer), inte en blind delete/insert, så att paid_at
+  // faktiskt sparas istället för att skrivas över nästa gång steg 2 körs.
+  for (const p of paidInvoices) {
+    const { error } = await supabaseAdmin
+      .from("transactions")
+      .update({ paid: true, paid_at: p.finalPayDate })
+      .eq("user_id", userId)
+      .eq("source", "fortnox")
+      .eq("external_id", p.externalId);
+    if (error) throw new Error(error.message);
+  }
+
+  // 2) Ta bort gamla öppna Fortnox-rader (och mock-data) — men rör aldrig
+  // rader som precis markerades betalda i steg 1.
+  const paidExternalIds = new Set(paidInvoices.map((p) => p.externalId));
+  const { data: existingFortnoxRows, error: existingErr } = await supabaseAdmin
+    .from("transactions")
+    .select("id, external_id")
+    .eq("user_id", userId)
+    .eq("source", "fortnox");
+  if (existingErr) throw new Error(existingErr.message);
+
+  const staleIds = (existingFortnoxRows ?? [])
+    .filter((row) => !row.external_id || !paidExternalIds.has(row.external_id))
+    .map((row) => row.id);
+  if (staleIds.length > 0) {
+    const { error } = await supabaseAdmin.from("transactions").delete().in("id", staleIds);
+    if (error) throw new Error(error.message);
+  }
+  const { error: mockDelErr } = await supabaseAdmin
     .from("transactions")
     .delete()
     .eq("user_id", userId)
-    .in("source", ["fortnox", "mock"]);
-  if (delErr) throw new Error(delErr.message);
+    .eq("source", "mock");
+  if (mockDelErr) throw new Error(mockDelErr.message);
 
+  // 3) Infoga färska öppna fakturor.
   if (transactions.length > 0) {
     const rows = transactions.map((t) => ({
       user_id: userId,
+      external_id: t.externalId,
       kind: t.kind,
       amount: t.amount,
       due_date: t.dueDate,
@@ -49,7 +83,7 @@ export async function syncFortnoxForUser(userId: string) {
       .eq("id", userId);
   }
 
-  return { imported: transactions.length, companyName };
+  return { imported: transactions.length, markedPaid: paidInvoices.length, companyName };
 }
 
 export const getFortnoxAuthUrl = createServerFn({ method: "POST" })

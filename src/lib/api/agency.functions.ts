@@ -61,7 +61,9 @@ export const getAgencyClients = createServerFn({ method: "GET" })
           .in("id", linkedIds),
         supabaseAdmin
           .from("transactions")
-          .select("id, user_id, kind, amount, due_date, description, paid, approval_status")
+          .select(
+            "id, user_id, kind, amount, due_date, description, paid, approval_status, paid_at",
+          )
           .in("user_id", linkedIds),
       ]);
       if (profilesRes.error) throw new Error(profilesRes.error.message);
@@ -78,6 +80,7 @@ export const getAgencyClients = createServerFn({ method: "GET" })
           description: t.description,
           paid: t.paid,
           approval_status: t.approval_status as Tx["approval_status"],
+          paid_at: t.paid_at,
         });
         txByUser.set(t.user_id, list);
       }

@@ -309,9 +309,11 @@ export type Database = {
           created_at: string
           description: string
           due_date: string
+          external_id: string | null
           id: string
           kind: string
           paid: boolean
+          paid_at: string | null
           source: string
           user_id: string
         }
@@ -321,9 +323,11 @@ export type Database = {
           created_at?: string
           description: string
           due_date: string
+          external_id?: string | null
           id?: string
           kind: string
           paid?: boolean
+          paid_at?: string | null
           source?: string
           user_id: string
         }
@@ -333,9 +337,11 @@ export type Database = {
           created_at?: string
           description?: string
           due_date?: string
+          external_id?: string | null
           id?: string
           kind?: string
           paid?: boolean
+          paid_at?: string | null
           source?: string
           user_id?: string
         }
