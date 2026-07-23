@@ -197,6 +197,7 @@ export type Database = {
           id: string
           include_pending_in_forecast: boolean
           language: string
+          last_login_at: string | null
           last_low_balance_alert_at: string | null
           last_low_balance_alert_key: string | null
           last_weekly_summary_sent_at: string | null
@@ -217,6 +218,7 @@ export type Database = {
           id: string
           include_pending_in_forecast?: boolean
           language?: string
+          last_login_at?: string | null
           last_low_balance_alert_at?: string | null
           last_low_balance_alert_key?: string | null
           last_weekly_summary_sent_at?: string | null
@@ -237,6 +239,7 @@ export type Database = {
           id?: string
           include_pending_in_forecast?: boolean
           language?: string
+          last_login_at?: string | null
           last_low_balance_alert_at?: string | null
           last_low_balance_alert_key?: string | null
           last_weekly_summary_sent_at?: string | null

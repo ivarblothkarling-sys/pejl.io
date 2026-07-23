@@ -145,6 +145,84 @@ export async function sendFortnoxSyncFailedEmail({
   }
 }
 
+export type LowBalanceReminderEmailInput = {
+  to: string;
+  companyName: string;
+  days: number;
+  minBalance: number;
+  minDate: string;
+};
+
+/**
+ * Skickas av fortnoxDailySync.server.ts till användare som inte loggat in på
+ * minst 24 timmar OCH vars 7-dagarsprognos dyker under varningsgränsen —
+ * dvs. till skillnad från sendLowBalanceEmail (som triggas live vid
+ * dashboard-laddning) når den här folk som inte är inne i appen och annars
+ * aldrig skulle sett varningen.
+ */
+export async function sendLowBalanceReminderEmail({
+  to,
+  companyName,
+  days,
+  minBalance,
+  minDate,
+}: LowBalanceReminderEmailInput) {
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) {
+    console.error("[emailAlert] Missing RESEND_API_KEY");
+    return { ok: false as const, error: "missing_keys" };
+  }
+
+  const dateSv = new Date(minDate).toLocaleDateString("sv-SE", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const belopp = formatSEK(minBalance);
+
+  const subject = `Pejl varnar: Kassan kan bli tight om ${days} dagar`;
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a">
+      <h1 style="font-size:20px;margin:0 0 16px">⚠️ Kassan kan bli tight om ${days} dagar</h1>
+      <p style="font-size:15px;line-height:1.5;margin:0 0 16px">
+        Hej! Prognosen för <strong>${companyName}</strong> visar en risk för lågt saldo den kommande veckan.
+      </p>
+      <p style="font-size:14px;line-height:1.5;color:#475569;margin:16px 0">
+        Ditt beräknade saldo når <strong>${belopp}</strong> den ${dateSv}. Logga in på
+        <a href="https://pejl.io" style="color:#0f172a">pejl.io</a> för att se vad du kan göra.
+      </p>
+      <a href="https://pejl.io/dashboard"
+         style="display:inline-block;background:#0f172a;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">
+        Öppna Pejl →
+      </a>
+      <p style="font-size:12px;color:#94a3b8;margin-top:32px">
+        Du får detta mejl eftersom du inte loggat in på ett tag och prognosen visar en risk för lågt saldo.
+      </p>
+    </div>
+  `;
+
+  try {
+    const res = await fetch(RESEND_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${resendKey}`,
+      },
+      body: JSON.stringify({ from: FROM, to: [to], subject, html }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[emailAlert] Resend ${res.status}: ${body}`);
+      return { ok: false as const, error: `resend_${res.status}` };
+    }
+    return { ok: true as const };
+  } catch (err) {
+    console.error("[emailAlert] fetch failed", err);
+    return { ok: false as const, error: "fetch_failed" };
+  }
+}
+
 export type WeeklySummaryEmailInput = {
   to: string;
   companyName: string;

@@ -91,4 +91,12 @@ export async function ensureUserBootstrap({
       .insert(mockTransactions(userId));
     if (insertTxError) throw new Error(insertTxError.message);
   }
+
+  // Körs vid varje inloggning (ensureUserBootstrap anropas i getDashboardData
+  // för varje request) — används av fortnoxDailySync för att avgöra om
+  // användaren varit inaktiv de senaste 24 timmarna.
+  await supabase
+    .from("profiles")
+    .update({ last_login_at: new Date().toISOString() })
+    .eq("id", userId);
 }
