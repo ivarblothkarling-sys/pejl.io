@@ -15,7 +15,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, BellRing, CalendarClock, Check, CheckCircle2, Copy, Landmark, Link2, LogOut, PlayCircle, Settings as SettingsIcon, Share2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Users, Wallet, X } from "lucide-react";
+import { AlertTriangle, BellRing, CalendarClock, Check, CheckCircle2, Copy, FlaskConical, Landmark, Link2, LogOut, PlayCircle, Settings as SettingsIcon, Share2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Users, Wallet, X } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,7 @@ import { computeForecast, computeSuggestions, formatDateSv, formatSEK, type Tx }
 import {
   generateWeeklySummary,
   getDashboardData,
+  simulateScenario,
   updatePendingApprovalPreference,
   updateThreshold,
 } from "@/lib/api/finance.functions";
@@ -61,6 +62,45 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 type DashData = Awaited<ReturnType<typeof getDashboardData>>;
+type SimulationResult = Awaited<ReturnType<typeof simulateScenario>>;
+type SimulationAction = "hire" | "new_client" | "delay_payment" | "early_invoice";
+
+const SIMULATION_OPTIONS: {
+  value: SimulationAction;
+  label: string;
+  description: string;
+  needsAmount: boolean;
+  dateLabel: string;
+}[] = [
+  {
+    value: "hire",
+    label: "Nyanställning",
+    description: "Lägg till en återkommande månadskostnad från ett valt datum.",
+    needsAmount: true,
+    dateLabel: "Startdatum (första lönekörningen)",
+  },
+  {
+    value: "new_client",
+    label: "Ny kund",
+    description: "Lägg till en engångsintäkt vid ett valt förfallodatum.",
+    needsAmount: true,
+    dateLabel: "Förfallodatum",
+  },
+  {
+    value: "delay_payment",
+    label: "Försenad kundbetalning",
+    description: "Flyttar din närmaste kundfaktura kring datumet 14 dagar framåt.",
+    needsAmount: false,
+    dateLabel: "Ungefärligt datum för fakturan",
+  },
+  {
+    value: "early_invoice",
+    label: "Betala leverantör tidigare",
+    description: "Flyttar din närmaste leverantörsfaktura kring datumet 7 dagar bakåt.",
+    needsAmount: false,
+    dateLabel: "Ungefärligt datum för fakturan",
+  },
+];
 const getFortnoxRedirectUri = () =>
   typeof window !== "undefined"
     ? `${window.location.origin}/auth/fortnox/callback`
@@ -109,6 +149,35 @@ function DashboardPage() {
   const [tinkLoading, setTinkLoading] = useState(false);
   const [tinkSyncing, setTinkSyncing] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+
+  const [simulateOpen, setSimulateOpen] = useState(false);
+  const [simulateAction, setSimulateAction] = useState<SimulationAction>("hire");
+  const [simulateAmount, setSimulateAmount] = useState("10000");
+  const [simulateDate, setSimulateDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [simulating, setSimulating] = useState(false);
+  const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
+  const simulateScenarioFn = useServerFn(simulateScenario);
+
+  const handleSimulate = async () => {
+    const option = SIMULATION_OPTIONS.find((o) => o.value === simulateAction)!;
+    setSimulating(true);
+    try {
+      const result = await simulateScenarioFn({
+        data: {
+          action: simulateAction,
+          amount: option.needsAmount ? Number(simulateAmount) || 0 : 0,
+          date: simulateDate,
+        },
+      });
+      setSimulationResult(result);
+      setSimulateOpen(false);
+      toast.success("Simulering klar", { description: result.summary });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte simulera scenariot");
+    } finally {
+      setSimulating(false);
+    }
+  };
 
 
 
@@ -415,12 +484,16 @@ function DashboardPage() {
   const hasBreach = !!forecast.breachDate;
 
   const CONFIRMED_DAYS = 14;
+  const simulatedByDate = simulationResult
+    ? new Map(simulationResult.simulated_forecast.map((p) => [p.date, p.balance]))
+    : null;
   const chartData = forecast.points.map((p, i) => ({
     ...p,
     label: formatDateSv(p.date),
     threshold: forecast.threshold,
     confirmed: i <= CONFIRMED_DAYS ? p.balance : null,
     indicative: i >= CONFIRMED_DAYS ? p.balance : null,
+    simulated: simulatedByDate?.get(p.date) ?? null,
   }));
 
   const upcomingUnpaid = transactions.filter((t) => !t.paid).slice(0, 8);
@@ -819,25 +892,67 @@ function DashboardPage() {
 
         {/* Forecast chart */}
         <section className="bg-card border border-border rounded-2xl p-4 md:p-6 shadow-sm">
-          <div className="flex items-start justify-between mb-4">
+          <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
             <div>
               <h2 className="text-base font-semibold">Prognos 30 dagar framåt</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Bekräftad dag 0–14, indikativ dag 15–30</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Bekräftad dag 0–14, indikativ dag 15–30
+              </p>
             </div>
-            <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block w-3 h-0.5 bg-[var(--color-chart-1)]" />
-                Bekräftad
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span
-                  className="inline-block w-3 h-0.5 opacity-60"
-                  style={{ borderTop: "2px dashed var(--color-chart-1)", background: "transparent" }}
-                />
-                Indikativ
-              </span>
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" onClick={() => setSimulateOpen(true)}>
+                <FlaskConical className="size-3.5" /> Simulera
+              </Button>
+              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-0.5 bg-[var(--color-chart-1)]" />
+                  Bekräftad
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="inline-block w-3 h-0.5 opacity-60"
+                    style={{
+                      borderTop: "2px dashed var(--color-chart-1)",
+                      background: "transparent",
+                    }}
+                  />
+                  Indikativ
+                </span>
+                {simulationResult && (
+                  <span className="flex items-center gap-1.5">
+                    <span
+                      className="inline-block w-3 h-0.5"
+                      style={{
+                        borderTop: "2px dashed var(--color-chart-3)",
+                        background: "transparent",
+                      }}
+                    />
+                    Simulering
+                  </span>
+                )}
+              </div>
             </div>
           </div>
+
+          {simulationResult && (
+            <div
+              className="mb-4 flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
+              style={{
+                borderColor: "var(--color-chart-3)",
+                backgroundColor: "color-mix(in oklab, var(--color-chart-3) 8%, transparent)",
+              }}
+            >
+              <span className="text-foreground">{simulationResult.summary}</span>
+              <button
+                onClick={() => setSimulationResult(null)}
+                className="text-muted-foreground hover:text-foreground shrink-0"
+                title="Rensa simulering"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          )}
+
           <div className="h-64 -mx-2">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -869,7 +984,10 @@ function DashboardPage() {
                     borderRadius: 12,
                     fontSize: 12,
                   }}
-                  formatter={(value: number) => [formatSEK(value), "Saldo"]}
+                  formatter={(value: number, name: string) => [
+                    formatSEK(value),
+                    name === "simulated" ? "Simulerat saldo" : "Saldo",
+                  ]}
                   labelFormatter={(l) => l}
                 />
                 <ReferenceLine
@@ -919,7 +1037,19 @@ function DashboardPage() {
                   animationDuration={1200}
                   animationEasing="ease-out"
                 />
-                
+                {simulationResult && (
+                  <Area
+                    type="monotone"
+                    dataKey="simulated"
+                    stroke="var(--color-chart-3)"
+                    strokeWidth={2}
+                    strokeDasharray="4 3"
+                    fill="transparent"
+                    connectNulls
+                    isAnimationActive
+                    animationDuration={600}
+                  />
+                )}
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -1039,6 +1169,86 @@ function DashboardPage() {
           />
         </section>
       </main>
+
+      {simulateOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-background/80 backdrop-blur flex items-center justify-center p-4"
+          onClick={() => setSimulateOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-xl border border-border bg-card p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h3 className="font-semibold">Simulera ett scenario</h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                Se hur en åtgärd hade påverkat prognosen — rör aldrig din riktiga data.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {SIMULATION_OPTIONS.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => setSimulateAction(o.value)}
+                  className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${
+                    simulateAction === o.value
+                      ? "border-primary bg-primary/10"
+                      : "border-border hover:bg-secondary/50"
+                  }`}
+                >
+                  <div className="text-sm font-medium">{o.label}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{o.description}</div>
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {SIMULATION_OPTIONS.find((o) => o.value === simulateAction)?.needsAmount && (
+                <div>
+                  <Label>Belopp (SEK)</Label>
+                  <Input
+                    type="number"
+                    value={simulateAmount}
+                    onChange={(e) => setSimulateAmount(e.target.value)}
+                  />
+                </div>
+              )}
+              <div
+                className={
+                  SIMULATION_OPTIONS.find((o) => o.value === simulateAction)?.needsAmount
+                    ? ""
+                    : "col-span-2"
+                }
+              >
+                <Label>
+                  {SIMULATION_OPTIONS.find((o) => o.value === simulateAction)?.dateLabel}
+                </Label>
+                <Input
+                  type="date"
+                  value={simulateDate}
+                  onChange={(e) => setSimulateDate(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSimulateOpen(false)}
+                disabled={simulating}
+              >
+                Avbryt
+              </Button>
+              <Button size="sm" onClick={handleSimulate} disabled={simulating}>
+                {simulating ? "Simulerar…" : "Simulera"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
