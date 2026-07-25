@@ -417,9 +417,7 @@ export function computeForecast(
   let cumulativePredictedImpact = 0;
   let cumulativeTotalImpact = 0;
 
-  points.push({ date: fmtDate(start), balance, delta: 0, events: [], confidence_score: 100 });
-
-  for (let i = 1; i <= days; i++) {
+  for (let i = 0; i <= days; i++) {
     const day = new Date(start);
     day.setUTCDate(start.getUTCDate() + i);
     const key = fmtDate(day);
