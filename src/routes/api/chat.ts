@@ -13,7 +13,7 @@ import { z } from "zod";
 
 import type { Database } from "@/integrations/supabase/types";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
-import { getDashboardData } from "@/lib/api/finance.functions";
+import { getCustomerRisk, getDashboardData } from "@/lib/api/finance.functions";
 import { computeForecast, formatSEK, type Tx } from "@/lib/forecast";
 
 type ChatRequestBody = { messages?: unknown };
@@ -109,6 +109,16 @@ async function buildSystemPrompt(): Promise<string> {
   const { profile, transactions, forecast, suggestions, awaitingApprovalSum } =
     await getDashboardData();
 
+  // Eget try/catch — ett fel här ska inte offra hela den datagrundade
+  // systemprompten (buildSystemPrompt().catch(...) i POST-handlern nedan
+  // faller annars tillbaka till ett generiskt, siffer-löst läge).
+  let customerRisks: Awaited<ReturnType<typeof getCustomerRisk>> = [];
+  try {
+    customerRisks = await getCustomerRisk();
+  } catch (err) {
+    console.error("[chat] Kunde inte hämta kreditrisk-data:", err);
+  }
+
   const unpaid = transactions.filter((t) => !t.paid);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -147,6 +157,22 @@ async function buildSystemPrompt(): Promise<string> {
         .join("\n")}`
     : `\n== Kundfakturor mer än 30 dagar försenade ==\nInga.`;
 
+  const riskEmoji: Record<(typeof customerRisks)[number]["riskLevel"], string> = {
+    green: "🟢",
+    yellow: "🟡",
+    red: "🔴",
+  };
+  const creditRiskBlock = customerRisks.length
+    ? `\n== Kreditrisk per kund (baserat på betalningshistorik) ==\n${customerRisks
+        .map(
+          (r) =>
+            `- ${riskEmoji[r.riskLevel]} ${r.customerKey}: ${r.riskLevel} (snitt ${r.avgDelayDays > 0 ? "+" : ""}${r.avgDelayDays} dagar mot förfallodatum, ${Math.round(r.lateRatio * 100)}% sena betalningar, ${r.sampleSize} betalda fakturor)`,
+        )
+        .join(
+          "\n",
+        )}\nNär du nämner en kund som finns i listan ovan i ditt svar — inled kundens namn med samma emoji som i listan (🟢/🟡/🔴), t.ex. "🔴 Nordic Design AB". Hitta ALDRIG på en risknivå för en kund som inte finns i listan.`
+    : "";
+
   return `Du är Pejl, en proaktiv och saklig ekonomiassistent för svenska småföretagare OCH deras redovisningskonsulter.
 Svara alltid på svenska, kort och kärnfullt – max 2–3 meningar, undvik långa utläggningar och upprepningar. Håll tonen krispig och konkret. Belopp i SEK, datum i ISO-format (YYYY-MM-DD).
 Använd ENDAST datan nedan – hitta inte på siffror. Svara kontextuellt utifrån den faktiska datan, inte generiskt. Om frågan inte rör datan, svara kort och hjälpsamt ändå.
@@ -179,6 +205,7 @@ ${breach}
 ${attestWarning ? `\n${attestWarning}` : ""}
 ${suggestionsBlock}
 ${overdueBlock}
+${creditRiskBlock}
 
 == Obetalda transaktioner kommande period ==
 ${unpaid

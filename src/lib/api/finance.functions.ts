@@ -2,7 +2,13 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { computeForecast, computeSuggestions, formatSEK, type Tx } from "@/lib/forecast";
+import {
+  computeForecast,
+  computeSuggestions,
+  extractCustomerKey,
+  formatSEK,
+  type Tx,
+} from "@/lib/forecast";
 import { computeTaxEvents } from "@/lib/tax";
 
 export const getDashboardData = createServerFn({ method: "GET" })
@@ -341,6 +347,83 @@ function applyScenario(
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// getCustomerRisk — kreditrisk per kund baserat på faktisk betalningshistorik
+// ---------------------------------------------------------------------------
+
+const MIN_RISK_SAMPLES = 3;
+const RISK_DAY_MS = 86_400_000;
+
+export type CustomerRiskLevel = "green" | "yellow" | "red";
+
+export type CustomerRisk = {
+  customerKey: string;
+  avgDelayDays: number;
+  lateRatio: number;
+  sampleSize: number;
+  riskLevel: CustomerRiskLevel;
+};
+
+function classifyCustomerRisk(avgDelayDays: number, lateRatio: number): CustomerRiskLevel {
+  if (avgDelayDays > 10 || lateRatio > 0.5) return "red";
+  if (avgDelayDays <= 3) return "green";
+  return "yellow";
+}
+
+/**
+ * Grupperar betalda kundfakturor per kund med samma extractCustomerKey-
+ * heuristik som analyzeCustomerPaymentDelay i forecast.ts (matchar Fortnox-
+ * mönstret "Kundfaktura #123 — Kundnamn AB"), så de två inte kan drifta isär.
+ * Kunder med färre än MIN_RISK_SAMPLES betalda fakturor utelämnas helt —
+ * för litet underlag för en riskbedömning.
+ */
+export function computeCustomerRisk(
+  paidIncome: { description: string; due_date: string; paid_at: string }[],
+): CustomerRisk[] {
+  const byCustomer = new Map<string, { due_date: string; paid_at: string }[]>();
+  for (const t of paidIncome) {
+    const key = extractCustomerKey(t.description);
+    const list = byCustomer.get(key);
+    if (list) list.push(t);
+    else byCustomer.set(key, [t]);
+  }
+
+  const risks: CustomerRisk[] = [];
+  for (const [customerKey, txs] of byCustomer) {
+    if (txs.length < MIN_RISK_SAMPLES) continue;
+    const delays = txs.map(
+      (t) => (new Date(t.paid_at).getTime() - new Date(t.due_date).getTime()) / RISK_DAY_MS,
+    );
+    const avgDelayDays = Math.round((delays.reduce((s, d) => s + d, 0) / delays.length) * 10) / 10;
+    const lateRatio = Math.round((delays.filter((d) => d > 0).length / delays.length) * 100) / 100;
+    risks.push({
+      customerKey,
+      avgDelayDays,
+      lateRatio,
+      sampleSize: txs.length,
+      riskLevel: classifyCustomerRisk(avgDelayDays, lateRatio),
+    });
+  }
+  return risks.sort((a, b) => b.avgDelayDays - a.avgDelayDays);
+}
+
+export const getCustomerRisk = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data, error } = await supabase
+      .from("transactions")
+      .select("description, due_date, paid_at")
+      .eq("user_id", userId)
+      .eq("kind", "income")
+      .not("paid_at", "is", null);
+    if (error) throw new Error(error.message);
+
+    return computeCustomerRisk(
+      (data ?? []) as { description: string; due_date: string; paid_at: string }[],
+    );
+  });
 
 export const simulateScenario = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
