@@ -8,6 +8,7 @@ const waitlistProviderEnum = z.enum(["tripletex", "xero", "quickbooks"]);
 const currencyEnum = z.enum(["SEK", "NOK", "GBP", "EUR", "USD"]);
 const languageEnum = z.enum(["sv", "en"]);
 const countryEnum = z.enum(["SE", "NO", "GB", "US"]);
+const vatPeriodEnum = z.enum(["monthly", "quarterly", "yearly"]);
 
 export const getUserSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -16,7 +17,7 @@ export const getUserSettings = createServerFn({ method: "GET" })
     const { data: profile, error } = await supabase
       .from("profiles")
       .select(
-        "accounting_provider, currency, country, language, include_pending_in_forecast, billing_status",
+        "accounting_provider, currency, country, language, include_pending_in_forecast, billing_status, vat_period",
       )
       .eq("id", userId)
       .maybeSingle();
@@ -34,6 +35,7 @@ export const getUserSettings = createServerFn({ method: "GET" })
       language: profile?.language ?? "sv",
       include_pending_in_forecast: profile?.include_pending_in_forecast ?? false,
       billing_status: (profile?.billing_status ?? "trial") as "trial" | "active" | "cancelled",
+      vat_period: (profile?.vat_period ?? "monthly") as "monthly" | "quarterly" | "yearly",
       waitlist: (waitlist ?? []).map((w) => w.provider as string),
     };
   });
@@ -46,6 +48,7 @@ export const updateUserSettings = createServerFn({ method: "POST" })
       currency: currencyEnum.optional(),
       country: countryEnum.optional(),
       language: languageEnum.optional(),
+      vat_period: vatPeriodEnum.optional(),
     }),
   )
   .handler(async ({ data, context }) => {

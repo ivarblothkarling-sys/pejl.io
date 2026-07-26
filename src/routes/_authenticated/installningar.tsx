@@ -223,6 +223,7 @@ function SettingsPage() {
           currency: patch.currency as "SEK" | "NOK" | "GBP" | "EUR" | "USD" | undefined,
           language: patch.language as "sv" | "en" | undefined,
           country: patch.country as "SE" | "NO" | "GB" | "US" | undefined,
+          vat_period: patch.vat_period as "monthly" | "quarterly" | "yearly" | undefined,
         },
       });
       setSettings({ ...settings, ...patch });
@@ -586,6 +587,37 @@ function SettingsPage() {
               onCheckedChange={handleTogglePendingApproval}
             />
           </div>
+          {settings.country === "SE" && (
+            <div className="mt-5 pt-5 border-t border-border">
+              <Label className="text-sm font-normal">Momsperiod</Label>
+              <p className="text-xs text-muted-foreground mt-0.5 mb-3">
+                Fortnox exponerar inte momsperioden via sitt API — ange den själv (eller be din
+                redovisningskonsult) så att skattekalendern räknar rätt förfallodatum.
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    { value: "monthly", label: "Månadsvis" },
+                    { value: "quarterly", label: "Kvartalsvis" },
+                    { value: "yearly", label: "Årsvis" },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.value}
+                    disabled={saving}
+                    onClick={() => save({ vat_period: opt.value })}
+                    className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                      settings.vat_period === opt.value
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-secondary/40"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Currency */}

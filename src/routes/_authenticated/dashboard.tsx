@@ -535,6 +535,7 @@ function DashboardPage() {
     confirmed: i <= CONFIRMED_DAYS ? p.balance : null,
     indicative: i >= CONFIRMED_DAYS ? p.balance : null,
     simulated: simulatedByDate?.get(p.date) ?? null,
+    hasTaxEvent: p.events.some((e) => e.category === "tax"),
   }));
 
   const upcomingUnpaid = transactions.filter((t) => !t.paid).slice(0, 8);
@@ -1143,6 +1144,15 @@ function DashboardPage() {
                   strokeWidth={2.5}
                   fill="url(#balanceFill)"
                   connectNulls={false}
+                  dot={({
+                    key,
+                    ...dotProps
+                  }: {
+                    key?: string;
+                    cx?: number;
+                    cy?: number;
+                    payload?: { hasTaxEvent?: boolean };
+                  }) => <TaxDot key={key} {...dotProps} />}
                   isAnimationActive
                   animationDuration={1200}
                   animationEasing="ease-out"
@@ -1157,6 +1167,15 @@ function DashboardPage() {
                   fill="url(#balanceFill)"
                   fillOpacity={0.4}
                   connectNulls={false}
+                  dot={({
+                    key,
+                    ...dotProps
+                  }: {
+                    key?: string;
+                    cx?: number;
+                    cy?: number;
+                    payload?: { hasTaxEvent?: boolean };
+                  }) => <TaxDot key={key} {...dotProps} />}
                   isAnimationActive
                   animationDuration={1200}
                   animationEasing="ease-out"
@@ -1419,6 +1438,42 @@ function KpiCard({
       <div className="mt-2 text-xl font-semibold tracking-tight">{value}</div>
       {sub && <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>}
     </div>
+  );
+}
+
+/**
+ * Custom Recharts-dot — ritas bara på dagar med minst en skattehändelse
+ * (hasTaxEvent), så skatteförfall syns direkt i prognoslinjen och inte
+ * bara i "Kommande skatter"-kortet under grafen. Röd (destructive) med
+ * avsikt — skiljer den från den mjukare tax-färgen (blå/lila) som redan
+ * används i den passiva listvyn, för att markera att det här är något
+ * som faktiskt påverkar linjen just den dagen.
+ */
+function TaxDot(props: { cx?: number; cy?: number; payload?: { hasTaxEvent?: boolean } }) {
+  const { cx, cy, payload } = props;
+  if (!payload?.hasTaxEvent || cx == null || cy == null) return <g />;
+  return (
+    <g>
+      <circle
+        cx={cx}
+        cy={cy}
+        r={7}
+        fill="var(--color-destructive)"
+        stroke="var(--color-card)"
+        strokeWidth={1.5}
+      />
+      <text
+        x={cx}
+        y={cy}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={9}
+        fontWeight={700}
+        fill="white"
+      >
+        §
+      </text>
+    </g>
   );
 }
 

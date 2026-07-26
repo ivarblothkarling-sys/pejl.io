@@ -34,6 +34,7 @@ export type ForecastPoint = {
     amount: number;
     kind: "income" | "expense";
     predicted?: boolean;
+    category?: "tax" | "regular";
   }[];
   /** 0–100. Hur säker beräkningen är för just den här dagen — se computeConfidence(). */
   confidence_score: number;
@@ -498,7 +499,13 @@ export function computeForecast(
       delta += signed;
       cumulativeTotalImpact += Math.abs(signed);
       if (t.predicted) cumulativePredictedImpact += Math.abs(signed);
-      return { description: t.description, amount: signed, kind: t.kind, predicted: t.predicted };
+      return {
+        description: t.description,
+        amount: signed,
+        kind: t.kind,
+        predicted: t.predicted,
+        category: t.category,
+      };
     });
 
     balance += delta;

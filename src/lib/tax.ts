@@ -16,9 +16,11 @@ const ALL_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 /**
  * Vilka månader momsdeklarationen förfaller i, beroende på företagets
- * momsperiod (hämtas från Fortnox — se computeTaxEvents nedan). Kvartals-
- * och årsmoms modelleras som en månads eftersläpning efter periodens slut
- * (t.ex. Q1 jan–mar → förfaller i april).
+ * momsperiod (satt manuellt i Inställningar — Fortnox API:t exponerar inte
+ * momsperiod via companyinformation eller settings/company, verifierat mot
+ * Fortnox egna typdefinitioner). Kvartals- och årsmoms modelleras som en
+ * månads eftersläpning efter periodens slut (t.ex. Q1 jan–mar → förfaller
+ * i april).
  *
  * OBS — approximation: Skatteverkets faktiska förfallodagar skiljer sig i
  * verkligheten ofta åt mellan månads- (26:e) och kvartalsmoms (vanligtvis
