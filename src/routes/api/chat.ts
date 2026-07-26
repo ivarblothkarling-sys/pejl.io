@@ -14,7 +14,7 @@ import { z } from "zod";
 import type { Database } from "@/integrations/supabase/types";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
 import { getCustomerRisk, getDashboardData } from "@/lib/api/finance.functions";
-import { computeForecast, formatSEK, type Tx } from "@/lib/forecast";
+import { computeForecast, formatMonthSv, formatSEK, type Tx } from "@/lib/forecast";
 
 type ChatRequestBody = { messages?: unknown };
 
@@ -173,6 +173,10 @@ async function buildSystemPrompt(): Promise<string> {
         )}\nNär du nämner en kund som finns i listan ovan i ditt svar — inled kundens namn med samma emoji som i listan (🟢/🟡/🔴), t.ex. "🔴 Nordic Design AB". Hitta ALDRIG på en risknivå för en kund som inte finns i listan.`
     : "";
 
+  const revenueTargetBlock = forecast.monthlyRevenueProgress
+    ? `\n== Kassaflödesmål för ${formatMonthSv(forecast.monthlyRevenueProgress.month)} ==\nMål: ${formatSEK(forecast.monthlyRevenueProgress.target)}\nBokfört hittills i månaden: ${formatSEK(forecast.monthlyRevenueProgress.bookedSoFar)} (${forecast.monthlyRevenueProgress.percentOfTarget}% av målet)\nPrognos för hela månaden (bokfört hittills + redan fakturerat resterande av månaden): ${formatSEK(forecast.monthlyRevenueProgress.projectedTotal)}\n${forecast.monthlyRevenueProgress.onTrack ? "Kunden ligger på rätt spår att nå målet." : "Kunden ligger EFTER och riskerar att inte nå målet om inget förändras."}\nOm användaren frågar något i stil med "klarar jag mitt mål den här månaden?" — svara utifrån just den här datan (på rätt spår/efter, hur mycket kvar, hur stor andel av målet som redan är uppnått).`
+    : `\n== Kassaflödesmål ==\nAnvändaren har inte satt något månadsmål. Om de frågar om att "klara sitt mål" — förklara kort att inget mål är satt och att de kan sätta ett i dashboarden.`;
+
   return `Du är Pejl, en proaktiv och saklig ekonomiassistent för svenska småföretagare OCH deras redovisningskonsulter.
 Svara alltid på svenska, kort och kärnfullt – max 2–3 meningar, undvik långa utläggningar och upprepningar. Håll tonen krispig och konkret. Belopp i SEK, datum i ISO-format (YYYY-MM-DD).
 Använd ENDAST datan nedan – hitta inte på siffror. Svara kontextuellt utifrån den faktiska datan, inte generiskt. Om frågan inte rör datan, svara kort och hjälpsamt ändå.
@@ -206,6 +210,7 @@ ${attestWarning ? `\n${attestWarning}` : ""}
 ${suggestionsBlock}
 ${overdueBlock}
 ${creditRiskBlock}
+${revenueTargetBlock}
 
 == Obetalda transaktioner kommande period ==
 ${unpaid
@@ -233,7 +238,10 @@ async function buildSmartSuggestions(): Promise<string[]> {
   const key = process.env.LOVABLE_API_KEY;
   if (!key) return [];
 
-  const { transactions, forecast } = await getDashboardData();
+  const { transactions, forecast, profile } = await getDashboardData();
+  const country = ((profile as { country?: string }).country ?? "SE") as "SE" | "NO" | "GB" | "US";
+  const vatPeriod = ((profile as { vat_period?: string }).vat_period ?? "monthly") as
+    "monthly" | "quarterly" | "yearly";
 
   const tools = {
     get_overdue_invoices: tool({
@@ -312,6 +320,9 @@ async function buildSmartSuggestions(): Promise<string[]> {
           forecast.threshold,
           [...modified].sort((a, b) => a.due_date.localeCompare(b.due_date)),
           30,
+          new Date(),
+          country,
+          vatPeriod,
         );
         return {
           helps: forecast.breachDate !== null && newForecast.breachDate === null,

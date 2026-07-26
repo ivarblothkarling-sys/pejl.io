@@ -37,11 +37,19 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { NotificationBell } from "@/components/NotificationBell";
-import { computeForecast, computeSuggestions, formatDateSv, formatSEK, type Tx } from "@/lib/forecast";
+import {
+  computeForecast,
+  computeSuggestions,
+  formatDateSv,
+  formatMonthSv,
+  formatSEK,
+  type Tx,
+} from "@/lib/forecast";
 import {
   generateWeeklySummary,
   getDashboardData,
   simulateScenario,
+  updateMonthlyRevenueTarget,
   updatePendingApprovalPreference,
   updateThreshold,
 } from "@/lib/api/finance.functions";
@@ -123,6 +131,8 @@ function DashboardPage() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [editingThreshold, setEditingThreshold] = useState(false);
   const [thresholdInput, setThresholdInput] = useState("");
+  const [editingRevenueTarget, setEditingRevenueTarget] = useState(false);
+  const [revenueTargetInput, setRevenueTargetInput] = useState("");
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
@@ -403,6 +413,33 @@ function DashboardPage() {
     }
   };
 
+  const handleSaveRevenueTarget = async () => {
+    const v = Number(revenueTargetInput);
+    if (Number.isNaN(v) || v < 0) {
+      toast.error("Ange ett giltigt belopp");
+      return;
+    }
+    try {
+      await updateMonthlyRevenueTarget({ data: { target: v } });
+      toast.success("Månadsmål uppdaterat");
+      setEditingRevenueTarget(false);
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte spara");
+    }
+  };
+
+  const handleClearRevenueTarget = async () => {
+    try {
+      await updateMonthlyRevenueTarget({ data: { target: null } });
+      toast.success("Månadsmål borttaget");
+      setEditingRevenueTarget(false);
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte spara");
+    }
+  };
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate({ to: "/auth" });
@@ -460,7 +497,11 @@ function DashboardPage() {
     ];
     const startBalance = 8200;
     const threshold = 15000;
-    const fc = computeForecast(startBalance, threshold, txs, 30, today);
+    // country: null — det här är ett skriptat demo-scenario med en egen
+    // hårdkodad "demo-vat"-post; auto-injektionen av riktiga skattedatum i
+    // computeForecast ska inte lägga till ytterligare skattehändelser ovanpå
+    // den kontrollerade demo-berättelsen.
+    const fc = computeForecast(startBalance, threshold, txs, 30, today, null);
     const sugg = computeSuggestions(fc, txs, today);
     return {
       ...data,
@@ -835,6 +876,89 @@ function DashboardPage() {
           </div>
         )}
 
+        {/* Kassaflödesmål */}
+        <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+          {forecast.monthlyRevenueProgress ? (
+            <>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <h3 className="font-semibold">
+                  Du är på {forecast.monthlyRevenueProgress.percentOfTarget}% av ditt månadsmål
+                  för {formatMonthSv(forecast.monthlyRevenueProgress.month)}
+                </h3>
+                <button
+                  onClick={() => {
+                    setRevenueTargetInput(String(forecast.monthlyRevenueProgress!.target));
+                    setEditingRevenueTarget((v) => !v);
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground underline shrink-0"
+                >
+                  Ändra
+                </button>
+              </div>
+              <div className="w-full h-2.5 rounded-full bg-secondary overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${forecast.monthlyRevenueProgress.onTrack ? "bg-success" : "bg-amber-500"}`}
+                  style={{
+                    width: `${Math.min(100, Math.max(0, forecast.monthlyRevenueProgress.percentOfTarget))}%`,
+                  }}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3 mt-2 text-xs text-muted-foreground">
+                <span>
+                  {formatSEK(forecast.monthlyRevenueProgress.bookedSoFar)} av{" "}
+                  {formatSEK(forecast.monthlyRevenueProgress.target)}
+                </span>
+                <span
+                  className={
+                    forecast.monthlyRevenueProgress.onTrack ? "text-success" : "text-amber-500"
+                  }
+                >
+                  {forecast.monthlyRevenueProgress.onTrack ? "På rätt spår" : "Ligger efter"} —
+                  prognos {formatSEK(forecast.monthlyRevenueProgress.projectedTotal)}
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">Kassaflödesmål</h3>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Sätt ett månadsmål för att följa hur intäkterna ligger till.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setRevenueTargetInput("");
+                  setEditingRevenueTarget(true);
+                }}
+              >
+                Sätt mål
+              </Button>
+            </div>
+          )}
+          {editingRevenueTarget && (
+            <div className="mt-4 flex items-end gap-2 max-w-md">
+              <div className="flex-1">
+                <Label htmlFor="revenueTarget">Månadsmål (SEK)</Label>
+                <Input
+                  id="revenueTarget"
+                  type="number"
+                  placeholder="t.ex. 150000"
+                  value={revenueTargetInput}
+                  onChange={(e) => setRevenueTargetInput(e.target.value)}
+                />
+              </div>
+              <Button onClick={handleSaveRevenueTarget}>Spara</Button>
+              {forecast.monthlyRevenueProgress && (
+                <Button variant="ghost" onClick={handleClearRevenueTarget}>
+                  Ta bort
+                </Button>
+              )}
+            </div>
+          )}
+        </section>
 
         {/* Warning banner */}
         {hasBreach && (

@@ -204,11 +204,13 @@ export type Database = {
           last_low_balance_alert_at: string | null
           last_low_balance_alert_key: string | null
           last_weekly_summary_sent_at: string | null
+          monthly_revenue_target: number | null
           onboarding_completed: boolean
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
           threshold: number
           updated_at: string
+          vat_period: string
         }
         Insert: {
           accounting_provider?: string
@@ -225,11 +227,13 @@ export type Database = {
           last_low_balance_alert_at?: string | null
           last_low_balance_alert_key?: string | null
           last_weekly_summary_sent_at?: string | null
+          monthly_revenue_target?: number | null
           onboarding_completed?: boolean
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
           threshold?: number
           updated_at?: string
+          vat_period?: string
         }
         Update: {
           accounting_provider?: string
@@ -246,11 +250,13 @@ export type Database = {
           last_low_balance_alert_at?: string | null
           last_low_balance_alert_key?: string | null
           last_weekly_summary_sent_at?: string | null
+          monthly_revenue_target?: number | null
           onboarding_completed?: boolean
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
           threshold?: number
           updated_at?: string
+          vat_period?: string
         }
         Relationships: []
       }

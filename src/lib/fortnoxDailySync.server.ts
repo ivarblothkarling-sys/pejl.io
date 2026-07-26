@@ -2,11 +2,14 @@
 // (icke utgånget) token. Anropas från Cloudflare Workers scheduled-hanteraren
 // i src/server.ts — se wrangler.toml för cron-schemat.
 import { computeForecast, formatSEK, type Tx } from "@/lib/forecast";
+import { computeTaxEvents } from "@/lib/tax";
 
 const CONSECUTIVE_FAILURE_THRESHOLD = 3;
 const LOW_BALANCE_REMINDER_DAYS = 7;
 const INACTIVITY_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 const PAYMENT_OVERDUE_DEDUP_DAYS = 3;
+const TAX_REMINDER_DAYS_BEFORE = [7, 2] as const;
+const TAX_REMINDER_WINDOW_DAYS = Math.max(...TAX_REMINDER_DAYS_BEFORE);
 
 /**
  * Efter en lyckad synk: hitta kundfakturor som är förfallna (due_date <
@@ -69,6 +72,92 @@ async function checkOverdueInvoicesForUser(userId: string) {
 }
 
 /**
+ * Efter en lyckad synk: skicka en påminnelse (notis + mejl) exakt
+ * TAX_REMINDER_DAYS_BEFORE (7 och 2) dagar innan varje skatte-/avgiftsförfall
+ * i skattekalendern (se computeTaxEvents i lib/tax.ts). Dedup görs per
+ * skattehändelse OCH per påminnelsetröskel via notifications.related_id
+ * (`${taxEventId}:${daysBefore}`) — annars skulle 7- och 2-dagarspåminnelsen
+ * för samma händelse blockera varandra, eller samma påminnelse skickas om
+ * varje dag fram till förfall.
+ */
+async function checkTaxReminderForUser(userId: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: profile, error: profileErr } = await supabaseAdmin
+    .from("profiles")
+    .select("company_name, country, vat_period")
+    .eq("id", userId)
+    .maybeSingle();
+  if (profileErr) throw new Error(profileErr.message);
+  if (!profile) return;
+
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const taxEvents = computeTaxEvents(
+    (profile.country ?? "SE") as "SE" | "NO" | "GB" | "US",
+    today,
+    TAX_REMINDER_WINDOW_DAYS,
+    (profile.vat_period ?? "monthly") as "monthly" | "quarterly" | "yearly",
+  );
+  if (taxEvents.length === 0) return;
+
+  const { createNotification } = await import("@/lib/api/notifications.functions");
+
+  for (const tx of taxEvents) {
+    const daysUntilDue = Math.round(
+      (new Date(tx.due_date).getTime() - today.getTime()) / 86_400_000,
+    );
+    if (!TAX_REMINDER_DAYS_BEFORE.includes(daysUntilDue as 7 | 2)) continue;
+
+    const relatedId = `${tx.id}:${daysUntilDue}`;
+    try {
+      const { data: existing, error: existingErr } = await supabaseAdmin
+        .from("notifications")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("type", "tax_reminder")
+        .eq("related_id", relatedId)
+        .limit(1)
+        .maybeSingle();
+      if (existingErr) throw new Error(existingErr.message);
+      if (existing) continue;
+
+      await createNotification({
+        userId,
+        type: "tax_reminder",
+        title: `${tx.description} förfaller om ${daysUntilDue} dagar`,
+        body: `${tx.description}${tx.amount > 0 ? ` på ${formatSEK(tx.amount)}` : ""} förfaller ${tx.due_date}.`,
+        relatedId,
+      });
+
+      const { data: userRes } = await supabaseAdmin.auth.admin.getUserById(userId);
+      const email = userRes.user?.email;
+      if (email) {
+        const { sendTaxReminderEmail } = await import("@/lib/emailAlert.server");
+        const result = await sendTaxReminderEmail({
+          to: email,
+          companyName: profile.company_name ?? "ditt företag",
+          label: tx.description,
+          amount: tx.amount,
+          dueDate: tx.due_date,
+          daysUntilDue,
+        });
+        if (!result.ok) {
+          console.error(
+            `[fortnoxDailySync] Kunde inte skicka skattepåminnelse-mejl till ${userId}:`,
+            result.error,
+          );
+        }
+      }
+    } catch (taxErr) {
+      console.error(
+        `[fortnoxDailySync] Kunde inte hantera skattepåminnelse ${relatedId} för ${userId}:`,
+        taxErr,
+      );
+    }
+  }
+}
+
+/**
  * Efter en lyckad synk: varna användare som inte varit inne i appen på minst
  * 24 timmar OCH vars 7-dagarsprognos dyker under varningsgränsen — annars
  * märker de det aldrig förrän de själva loggar in. Fristående try/catch per
@@ -80,7 +169,7 @@ async function checkLowBalanceReminderForUser(userId: string) {
   const [{ data: profile, error: profileErr }, { data: txRows, error: txErr }] = await Promise.all([
     supabaseAdmin
       .from("profiles")
-      .select("current_balance, threshold, company_name, last_login_at")
+      .select("current_balance, threshold, company_name, last_login_at, country, vat_period")
       .eq("id", userId)
       .maybeSingle(),
     supabaseAdmin.from("transactions").select("*").eq("user_id", userId),
@@ -98,6 +187,10 @@ async function checkLowBalanceReminderForUser(userId: string) {
     Number(profile.threshold) || 0,
     (txRows ?? []) as Tx[],
     LOW_BALANCE_REMINDER_DAYS,
+    new Date(),
+    ((profile as { country?: string }).country ?? "SE") as "SE" | "NO" | "GB" | "US",
+    ((profile as { vat_period?: string }).vat_period ?? "monthly") as
+      "monthly" | "quarterly" | "yearly",
   );
   if (forecast.minBalance >= forecast.threshold) return;
 
@@ -186,6 +279,15 @@ export async function runDailyFortnoxSync() {
         console.error(
           `[fortnoxDailySync] Försenad-faktura-koll misslyckades för ${conn.user_id}:`,
           overdueErr,
+        );
+      }
+
+      try {
+        await checkTaxReminderForUser(conn.user_id);
+      } catch (taxErr) {
+        console.error(
+          `[fortnoxDailySync] Skattepåminnelse-koll misslyckades för ${conn.user_id}:`,
+          taxErr,
         );
       }
     } catch (err) {

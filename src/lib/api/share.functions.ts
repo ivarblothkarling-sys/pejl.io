@@ -77,10 +77,16 @@ export const getSharedDashboard = createServerFn({ method: "GET" })
       current_balance: 0,
       threshold: 0,
       company_name: "Företaget",
+      country: "SE",
+      vat_period: "monthly",
     };
+    const country = ((profile as { country?: string }).country ?? "SE") as
+      "SE" | "NO" | "GB" | "US";
+    const vatPeriod = ((profile as { vat_period?: string }).vat_period ?? "monthly") as
+      "monthly" | "quarterly" | "yearly";
     const transactions = [
       ...((txRes.data ?? []) as Tx[]),
-      ...computeTaxEvents(),
+      ...computeTaxEvents(country, new Date(), 14, vatPeriod),
     ].sort((a, b) => a.due_date.localeCompare(b.due_date));
 
     const forecast = computeForecast(
@@ -88,6 +94,9 @@ export const getSharedDashboard = createServerFn({ method: "GET" })
       Number(profile.threshold) || 0,
       transactions,
       14,
+      new Date(),
+      country,
+      vatPeriod,
     );
 
     return { profile, transactions, forecast };

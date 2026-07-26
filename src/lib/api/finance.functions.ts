@@ -30,14 +30,30 @@ export const getDashboardData = createServerFn({ method: "GET" })
     if (profileRes.error) throw new Error(profileRes.error.message);
     if (txRes.error) throw new Error(txRes.error.message);
 
-    const profile = profileRes.data ?? { current_balance: 0, threshold: 0, company_name: "Mitt företag", country: "SE", currency: "SEK", language: "sv", accounting_provider: "fortnox", onboarding_completed: false, include_pending_in_forecast: false };
+    const profile = profileRes.data ?? {
+      current_balance: 0,
+      threshold: 0,
+      company_name: "Mitt företag",
+      country: "SE",
+      vat_period: "monthly",
+      currency: "SEK",
+      language: "sv",
+      accounting_provider: "fortnox",
+      onboarding_completed: false,
+      include_pending_in_forecast: false,
+    };
     const country = (profile as { country?: string }).country ?? "SE";
-    const includePending = Boolean((profile as { include_pending_in_forecast?: boolean }).include_pending_in_forecast);
+    const vatPeriod = (profile as { vat_period?: string }).vat_period ?? "monthly";
+    const includePending = Boolean(
+      (profile as { include_pending_in_forecast?: boolean }).include_pending_in_forecast,
+    );
     const rawTxs = (txRes.data ?? []) as Tx[];
 
     // Summera obetalda leverantörsfakturor per attest-status (SEK).
     const approvedPendingSum = rawTxs
-      .filter((t) => t.kind === "expense" && !t.paid && (t.approval_status ?? "approved") === "approved")
+      .filter(
+        (t) => t.kind === "expense" && !t.paid && (t.approval_status ?? "approved") === "approved",
+      )
       .reduce((s, t) => s + Number(t.amount), 0);
     const awaitingApprovalSum = rawTxs
       .filter((t) => t.kind === "expense" && !t.paid && t.approval_status === "pending_approval")
@@ -50,22 +66,35 @@ export const getDashboardData = createServerFn({ method: "GET" })
 
     const transactions = [
       ...forecastInput,
-      ...computeTaxEvents(country as "SE" | "NO" | "GB" | "US"),
+      ...computeTaxEvents(
+        country as "SE" | "NO" | "GB" | "US",
+        new Date(),
+        30,
+        vatPeriod as "monthly" | "quarterly" | "yearly",
+      ),
     ].sort((a, b) => a.due_date.localeCompare(b.due_date));
 
+    const monthlyRevenueTarget = (profile as { monthly_revenue_target?: number | null })
+      .monthly_revenue_target;
     const forecast = computeForecast(
       Number(profile.current_balance) || 0,
       Number(profile.threshold) || 0,
       transactions,
       30,
+      new Date(),
+      country as "SE" | "NO" | "GB" | "US",
+      vatPeriod as "monthly" | "quarterly" | "yearly",
+      monthlyRevenueTarget != null ? Number(monthlyRevenueTarget) : null,
     );
     const suggestions = computeSuggestions(forecast, transactions);
 
-
     // Fire-and-forget: skicka mejlvarning om saldot bryter gränsen (throttlat per breach-datum)
     if (forecast.breachDate) {
-      const p = profile as { last_low_balance_alert_key?: string | null; company_name?: string | null };
-      const alertKey = `${forecast.breachDate}:${Math.round((forecast.breachAmount ?? 0))}`;
+      const p = profile as {
+        last_low_balance_alert_key?: string | null;
+        company_name?: string | null;
+      };
+      const alertKey = `${forecast.breachDate}:${Math.round(forecast.breachAmount ?? 0)}`;
       if (p.last_low_balance_alert_key !== alertKey) {
         // Skapa alltid en in-app-notis vid en ny gränsöverträdelse, oavsett
         // om mejlet nedan går att skicka (t.ex. saknad RESEND_API_KEY eller
@@ -130,7 +159,6 @@ export const updatePendingApprovalPreference = createServerFn({ method: "POST" }
     return { ok: true };
   });
 
-
 export const updateThreshold = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ threshold: z.number().min(0) }))
@@ -139,6 +167,25 @@ export const updateThreshold = createServerFn({ method: "POST" })
       .from("profiles")
       .upsert(
         { id: context.userId, threshold: data.threshold, updated_at: new Date().toISOString() },
+        { onConflict: "id" },
+      );
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+/** target: null nollställer målet (döljer progress-baren i dashboarden). */
+export const updateMonthlyRevenueTarget = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ target: z.number().min(0).nullable() }))
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase
+      .from("profiles")
+      .upsert(
+        {
+          id: context.userId,
+          monthly_revenue_target: data.target,
+          updated_at: new Date().toISOString(),
+        },
         { onConflict: "id" },
       );
     if (error) throw new Error(error.message);
@@ -158,19 +205,29 @@ export async function buildWeeklySummary(
     current_balance?: number | null;
     threshold?: number | null;
     country?: string | null;
+    vat_period?: string | null;
   },
   rawTxs: Tx[],
 ) {
   const country = profile.country ?? "SE";
+  const vatPeriod = profile.vat_period ?? "monthly";
   const txs = [
     ...rawTxs,
-    ...computeTaxEvents(country as "SE" | "NO" | "GB" | "US"),
+    ...computeTaxEvents(
+      country as "SE" | "NO" | "GB" | "US",
+      new Date(),
+      30,
+      vatPeriod as "monthly" | "quarterly" | "yearly",
+    ),
   ].sort((a, b) => a.due_date.localeCompare(b.due_date));
   const forecast = computeForecast(
     Number(profile.current_balance) || 0,
     Number(profile.threshold) || 0,
     txs,
     30,
+    new Date(),
+    country as "SE" | "NO" | "GB" | "US",
+    vatPeriod as "monthly" | "quarterly" | "yearly",
   );
 
   const key = process.env.LOVABLE_API_KEY;
@@ -198,7 +255,10 @@ Kommande transaktioner (datum, typ, belopp, beskrivning):
 ${txs
   .filter((t) => !t.paid)
   .slice(0, 20)
-  .map((t) => `- ${t.due_date} | ${t.kind === "income" ? "IN " : "UT "} | ${formatSEK(Number(t.amount))} | ${t.description}`)
+  .map(
+    (t) =>
+      `- ${t.due_date} | ${t.kind === "income" ? "IN " : "UT "} | ${formatSEK(Number(t.amount))} | ${t.description}`,
+  )
   .join("\n")}`;
 
   const { text } = await generateText({
@@ -220,7 +280,13 @@ export const generateWeeklySummary = createServerFn({ method: "POST" })
     if (profileRes.error) throw new Error(profileRes.error.message);
     if (txRes.error) throw new Error(txRes.error.message);
 
-    const profile = profileRes.data ?? { current_balance: 0, threshold: 0, company_name: "ditt företag", country: "SE" };
+    const profile = profileRes.data ?? {
+      current_balance: 0,
+      threshold: 0,
+      company_name: "ditt företag",
+      country: "SE",
+      vat_period: "monthly",
+    };
     return buildWeeklySummary(profile, (txRes.data ?? []) as Tx[]);
   });
 
@@ -451,9 +517,11 @@ export const simulateScenario = createServerFn({ method: "POST" })
       current_balance: 0,
       threshold: 0,
       country: "SE",
+      vat_period: "monthly",
       include_pending_in_forecast: false,
     };
     const country = (profile as { country?: string }).country ?? "SE";
+    const vatPeriod = (profile as { vat_period?: string }).vat_period ?? "monthly";
     const includePending = Boolean(
       (profile as { include_pending_in_forecast?: boolean }).include_pending_in_forecast,
     );
@@ -467,7 +535,12 @@ export const simulateScenario = createServerFn({ method: "POST" })
       : rawTxs.filter((t) => (t.approval_status ?? "approved") !== "pending_approval");
     const baseTransactions = [
       ...forecastInput,
-      ...computeTaxEvents(country as "SE" | "NO" | "GB" | "US"),
+      ...computeTaxEvents(
+        country as "SE" | "NO" | "GB" | "US",
+        new Date(),
+        SIMULATION_DAYS,
+        vatPeriod as "monthly" | "quarterly" | "yearly",
+      ),
     ].sort((a, b) => a.due_date.localeCompare(b.due_date));
 
     const startBalance = Number(profile.current_balance) || 0;
@@ -488,6 +561,8 @@ export const simulateScenario = createServerFn({ method: "POST" })
       baseTransactions,
       SIMULATION_DAYS,
       fromDate,
+      country as "SE" | "NO" | "GB" | "US",
+      vatPeriod as "monthly" | "quarterly" | "yearly",
     );
     const simulatedForecast = computeForecast(
       startBalance,
@@ -495,6 +570,8 @@ export const simulateScenario = createServerFn({ method: "POST" })
       simulatedTransactions,
       SIMULATION_DAYS,
       fromDate,
+      country as "SE" | "NO" | "GB" | "US",
+      vatPeriod as "monthly" | "quarterly" | "yearly",
     );
 
     const difference = originalForecast.points.map((p, i) => ({

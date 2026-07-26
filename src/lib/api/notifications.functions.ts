@@ -4,7 +4,12 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export type NotificationType =
-  "forecast_warning" | "sync_failed" | "weekly_summary" | "bank_discrepancy" | "payment_overdue";
+  | "forecast_warning"
+  | "sync_failed"
+  | "weekly_summary"
+  | "bank_discrepancy"
+  | "payment_overdue"
+  | "tax_reminder";
 
 /**
  * Skapar en in-app-notis via service-role. Anropas från serverkod som redan

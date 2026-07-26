@@ -58,7 +58,9 @@ export const getAgencyClients = createServerFn({ method: "GET" })
       const [profilesRes, txRes] = await Promise.all([
         supabaseAdmin
           .from("profiles")
-          .select("id, current_balance, threshold, include_pending_in_forecast")
+          .select(
+            "id, current_balance, threshold, include_pending_in_forecast, country, vat_period",
+          )
           .in("id", linkedIds),
         supabaseAdmin
           .from("transactions")
@@ -96,6 +98,10 @@ export const getAgencyClients = createServerFn({ method: "GET" })
           Number(p.threshold) || 0,
           txs,
           30,
+          new Date(),
+          ((p as { country?: string }).country ?? "SE") as "SE" | "NO" | "GB" | "US",
+          ((p as { vat_period?: string }).vat_period ?? "monthly") as
+            "monthly" | "quarterly" | "yearly",
         );
         liveByUserId.set(p.id, {
           current_balance: Number(p.current_balance) || 0,

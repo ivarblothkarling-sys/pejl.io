@@ -223,6 +223,81 @@ export async function sendLowBalanceReminderEmail({
   }
 }
 
+export type TaxReminderEmailInput = {
+  to: string;
+  companyName: string;
+  label: string;
+  amount: number;
+  dueDate: string;
+  daysUntilDue: number;
+};
+
+/** Skickas 7 och 2 dagar innan ett skatte-/avgiftsförfall — se checkTaxReminderForUser i fortnoxDailySync.server.ts. */
+export async function sendTaxReminderEmail({
+  to,
+  companyName,
+  label,
+  amount,
+  dueDate,
+  daysUntilDue,
+}: TaxReminderEmailInput) {
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) {
+    console.error("[emailAlert] Missing RESEND_API_KEY");
+    return { ok: false as const, error: "missing_keys" };
+  }
+
+  const dateSv = new Date(dueDate).toLocaleDateString("sv-SE", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const belopp = amount > 0 ? formatSEK(amount) : "Belopp beror på årets resultat";
+  const dagarText = daysUntilDue === 1 ? "imorgon" : `om ${daysUntilDue} dagar`;
+
+  const subject = `Påminnelse: ${label} förfaller ${dagarText} — ${companyName}`;
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a">
+      <h1 style="font-size:20px;margin:0 0 16px">📋 ${label} förfaller ${dagarText}</h1>
+      <p style="font-size:15px;line-height:1.5;margin:0 0 16px">
+        Hej! Det här är en påminnelse om en kommande skattebetalning för <strong>${companyName}</strong>.
+      </p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
+        <tr><td style="padding:8px 0;color:#64748b">Förfallodatum</td><td style="padding:8px 0;text-align:right"><strong>${dateSv}</strong></td></tr>
+        <tr><td style="padding:8px 0;color:#64748b">Belopp</td><td style="padding:8px 0;text-align:right"><strong>${belopp}</strong></td></tr>
+      </table>
+      <a href="https://pejl.io/dashboard"
+         style="display:inline-block;background:#0f172a;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">
+        Öppna Pejl →
+      </a>
+      <p style="font-size:12px;color:#94a3b8;margin-top:32px">
+        Du får detta mejl eftersom Pejl bevakar ditt företags skattekalender.
+      </p>
+    </div>
+  `;
+
+  try {
+    const res = await fetch(RESEND_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${resendKey}`,
+      },
+      body: JSON.stringify({ from: FROM, to: [to], subject, html }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[emailAlert] Resend ${res.status}: ${body}`);
+      return { ok: false as const, error: `resend_${res.status}` };
+    }
+    return { ok: true as const };
+  } catch (err) {
+    console.error("[emailAlert] fetch failed", err);
+    return { ok: false as const, error: "fetch_failed" };
+  }
+}
+
 export type WeeklySummaryEmailInput = {
   to: string;
   companyName: string;

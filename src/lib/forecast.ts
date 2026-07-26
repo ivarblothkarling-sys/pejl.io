@@ -1,3 +1,5 @@
+import { computeTaxEvents, type Country, type VatPeriod } from "./tax";
+
 export type Tx = {
   id: string;
   kind: "income" | "expense";
@@ -37,6 +39,19 @@ export type ForecastPoint = {
   confidence_score: number;
 };
 
+export type MonthlyRevenueProgress = {
+  /** "YYYY-MM" */
+  month: string;
+  target: number;
+  /** Summan av intäkts-transaktioner med due_date i den här månaden, till och med idag (bokförda, oavsett betalstatus). */
+  bookedSoFar: number;
+  /** bookedSoFar + kända (redan bokförda) intäkter senare i samma månad — INTE återkommande-predikterade, bara det som faktiskt redan är fakturerat. */
+  projectedTotal: number;
+  /** bookedSoFar / target * 100, en decimal. */
+  percentOfTarget: number;
+  onTrack: boolean;
+};
+
 export type ForecastResult = {
   points: ForecastPoint[];
   threshold: number;
@@ -46,6 +61,7 @@ export type ForecastResult = {
   minDate: string;
   breachDate: string | null;
   breachAmount: number | null;
+  monthlyRevenueProgress: MonthlyRevenueProgress | null;
 };
 
 const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
@@ -382,13 +398,66 @@ export function computeForecast(
   transactions: Tx[],
   days = 30,
   fromDate: Date = new Date(),
+  /** null stänger av auto-injektionen helt — används av det skriptade demo-läget i dashboard.tsx. */
+  country: Country | null = "SE",
+  vatPeriod: VatPeriod = "monthly",
+  /** null/undefined = inget mål satt — monthlyRevenueProgress blir då null. */
+  monthlyTarget: number | null = null,
 ): ForecastResult {
   const start = toUtcMidnight(fromDate);
   const windowEnd = new Date(start);
   windowEnd.setUTCDate(windowEnd.getUTCDate() + days);
 
-  const history = transactions.filter((t) => new Date(t.due_date) < start);
-  const upcomingReal = transactions.filter(
+  // Skatteförfallodagar räknas alltid in automatiskt, oavsett om anroparen
+  // redan själv concat:at computeTaxEvents (flera anropare i finance.
+  // functions.ts/share.functions.ts gör det, för att kunna visa dem i UI:t
+  // innan prognosen räknas) — id-baserad dedup gör detta säkert att anropa
+  // dubbelt utan att räkna en skattehändelse två gånger. Anropare som INTE
+  // redan kände till skatter (agency.functions.ts, fortnoxDailySync.server.ts
+  // m.fl.) får dem nu gratis, vilket var hela poängen med att flytta in det
+  // här istället för att kräva att varje anropare kommer ihåg det själv.
+  const existingIds = new Set(transactions.map((t) => t.id));
+  const taxEvents = country
+    ? computeTaxEvents(country, fromDate, days, vatPeriod).filter((t) => !existingIds.has(t.id))
+    : [];
+  const allTransactions = taxEvents.length ? [...transactions, ...taxEvents] : transactions;
+
+  // Kassaflödesmål: oberoende av `days`-fönstret (som kan vara kortare än
+  // resten av kalendermånaden, t.ex. 7-dagars inaktivitetsvarningen) —
+  // räknas alltid över HELA innevarande kalendermånad mot allTransactions.
+  // "prognos" här är avsiktligt begränsat till redan bokförda (riktiga)
+  // intäkter senare i månaden, inte återkommande-predikterade belopp — de är
+  // en mönster-gissning och hade gjort mål-uppföljningen mer spekulativ än
+  // den ser ut att vara.
+  let monthlyRevenueProgress: MonthlyRevenueProgress | null = null;
+  if (monthlyTarget !== null && monthlyTarget > 0) {
+    const monthStart = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+    const monthEnd = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0));
+    const monthIncome = allTransactions.filter(
+      (t) =>
+        t.kind === "income" &&
+        new Date(t.due_date) >= monthStart &&
+        new Date(t.due_date) <= monthEnd,
+    );
+    const bookedSoFar = monthIncome
+      .filter((t) => new Date(t.due_date) <= start)
+      .reduce((s, t) => s + Number(t.amount), 0);
+    const restOfMonth = monthIncome
+      .filter((t) => new Date(t.due_date) > start)
+      .reduce((s, t) => s + Number(t.amount), 0);
+    const projectedTotal = bookedSoFar + restOfMonth;
+    monthlyRevenueProgress = {
+      month: fmtDate(monthStart).slice(0, 7),
+      target: monthlyTarget,
+      bookedSoFar: Math.round(bookedSoFar * 100) / 100,
+      projectedTotal: Math.round(projectedTotal * 100) / 100,
+      percentOfTarget: Math.round((bookedSoFar / monthlyTarget) * 1000) / 10,
+      onTrack: projectedTotal >= monthlyTarget,
+    };
+  }
+
+  const history = allTransactions.filter((t) => new Date(t.due_date) < start);
+  const upcomingReal = allTransactions.filter(
     (t) => !t.paid && new Date(t.due_date) >= start && new Date(t.due_date) <= windowEnd,
   );
 
@@ -468,6 +537,7 @@ export function computeForecast(
     minDate,
     breachDate,
     breachAmount: breachAmount === null ? null : Math.round(breachAmount * 100) / 100,
+    monthlyRevenueProgress,
   };
 }
 
@@ -550,3 +620,11 @@ export const formatSEK = (n: number) =>
 
 export const formatDateSv = (iso: string) =>
   new Date(iso).toLocaleDateString("sv-SE", { weekday: "short", day: "numeric", month: "short" });
+
+/** "2026-07" -> "juli 2026" */
+export const formatMonthSv = (yearMonth: string) =>
+  new Date(`${yearMonth}-01T00:00:00Z`).toLocaleDateString("sv-SE", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
