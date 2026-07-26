@@ -14,11 +14,15 @@ export const getUserSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    // select("*") istället för en namngiven kolumnlista — en namngiven lista
+    // failar HÅRT (Postgrest-fel, inte bara ett saknat fält) om en enda
+    // kolumn saknas i databasen, vilket gjorde att Inställningar-sidan
+    // fastnade permanent på "Laddar…" när vat_period-migrationen ännu inte
+    // var synkad till produktions-DB:n. select("*") degraderar snällt precis
+    // som getDashboardData m.fl. redan gör.
     const { data: profile, error } = await supabase
       .from("profiles")
-      .select(
-        "accounting_provider, currency, country, language, include_pending_in_forecast, billing_status, vat_period",
-      )
+      .select("*")
       .eq("id", userId)
       .maybeSingle();
     if (error) throw new Error(error.message);
