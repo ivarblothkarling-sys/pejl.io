@@ -902,3 +902,142 @@ export const sendPaymentReminder = createServerFn({ method: "POST" })
       summary,
     };
   });
+
+// ---------------------------------------------------------------------------
+// getIndustryBenchmark — anonym jämförelse mot andra Pejl-bolag i samma
+// omsättningsklass
+// ---------------------------------------------------------------------------
+
+export type BenchmarkGroup = "small" | "medium" | "large";
+
+export type IndustryBenchmark = {
+  sufficientData: true;
+  group: BenchmarkGroup;
+  sampleSize: number;
+  avg_balance: number;
+  avg_runway: number;
+  percentile: number;
+  yourBalance: number;
+  yourRunway: number;
+};
+
+export type IndustryBenchmarkResult = IndustryBenchmark | { sufficientData: false };
+
+const BENCHMARK_MIN_GROUP_SIZE = 10;
+const BENCHMARK_VOLUME_WINDOW_DAYS = 365;
+const BENCHMARK_BURN_WINDOW_DAYS = 30;
+const BENCHMARK_RUNWAY_CAP_DAYS = 365;
+
+function classifyBenchmarkGroup(annualIncomeVolume: number): BenchmarkGroup {
+  if (annualIncomeVolume < 500_000) return "small";
+  if (annualIncomeVolume <= 2_000_000) return "medium";
+  return "large";
+}
+
+/**
+ * Anonym branschjämförelse — läser ALDRIG identifierande fält (namn,
+ * e-post, bolagsnamn), bara saldo/tröskel/transaktionsbelopp via
+ * supabaseAdmin, och returnerar bara aggregerade snitt/percentil för HELA
+ * gruppen. Storleksklass baseras på summerad INKOMST (proxy för omsättning)
+ * de senaste 365 dagarna, eftersom transactions inte garanterat innehåller
+ * fullständig historik längre bak. "Kassaflödeshorisont" (runway) räknas som
+ * saldo delat på snittförbrukning per dag (obetalda utgifter kommande 30
+ * dagar) — bolag utan förbrukning får taket BENCHMARK_RUNWAY_CAP_DAYS.
+ * Döljer siffrorna helt (sufficientData: false) om gruppen har färre än
+ * BENCHMARK_MIN_GROUP_SIZE bolag, för att skydda enskilda användares
+ * integritet i små grupper.
+ */
+export const getIndustryBenchmark = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId?: string } | undefined) => input ?? {})
+  .handler(async ({ data, context }): Promise<IndustryBenchmarkResult> => {
+    const { supabase, userId } = context;
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const yourCompany = await resolveCompany(supabase, userId, data.companyId);
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const today = new Date();
+    const volumeWindowStart = new Date(today);
+    volumeWindowStart.setUTCDate(volumeWindowStart.getUTCDate() - BENCHMARK_VOLUME_WINDOW_DAYS);
+    const burnWindowEnd = new Date(today);
+    burnWindowEnd.setUTCDate(burnWindowEnd.getUTCDate() + BENCHMARK_BURN_WINDOW_DAYS);
+
+    const [{ data: companies, error: companiesErr }, { data: txRows, error: txErr }] =
+      await Promise.all([
+        supabaseAdmin.from("user_companies").select("id, current_balance").eq("is_active", true),
+        supabaseAdmin
+          .from("transactions")
+          .select("company_id, kind, amount, due_date, paid")
+          .gte("due_date", volumeWindowStart.toISOString().slice(0, 10))
+          .lte("due_date", burnWindowEnd.toISOString().slice(0, 10)),
+      ]);
+    if (companiesErr) throw new Error(companiesErr.message);
+    if (txErr) throw new Error(txErr.message);
+
+    const txByCompany = new Map<
+      string,
+      { kind: string; amount: number; due_date: string; paid: boolean }[]
+    >();
+    for (const t of txRows ?? []) {
+      if (!t.company_id) continue;
+      const list = txByCompany.get(t.company_id);
+      if (list) list.push(t);
+      else txByCompany.set(t.company_id, [t]);
+    }
+
+    const todayIso = today.toISOString().slice(0, 10);
+    const burnEndIso = burnWindowEnd.toISOString().slice(0, 10);
+
+    const metrics = (companies ?? []).map((c) => {
+      const txs = txByCompany.get(c.id) ?? [];
+      const annualIncomeVolume = txs
+        .filter((t) => t.kind === "income" && t.due_date <= todayIso)
+        .reduce((sum, t) => sum + Number(t.amount), 0);
+      const upcomingBurn = txs
+        .filter(
+          (t) =>
+            t.kind === "expense" && !t.paid && t.due_date >= todayIso && t.due_date <= burnEndIso,
+        )
+        .reduce((sum, t) => sum + Number(t.amount), 0);
+      const dailyBurn = upcomingBurn / BENCHMARK_BURN_WINDOW_DAYS;
+      const balance = Number(c.current_balance) || 0;
+      const runway =
+        dailyBurn > 0
+          ? Math.min(BENCHMARK_RUNWAY_CAP_DAYS, balance / dailyBurn)
+          : BENCHMARK_RUNWAY_CAP_DAYS;
+      return {
+        companyId: c.id,
+        balance,
+        runway,
+        group: classifyBenchmarkGroup(annualIncomeVolume),
+      };
+    });
+
+    const yourMetrics = metrics.find((m) => m.companyId === yourCompany.id);
+    const yourGroup = yourMetrics?.group ?? classifyBenchmarkGroup(0);
+    const peers = metrics.filter((m) => m.group === yourGroup);
+
+    if (peers.length < BENCHMARK_MIN_GROUP_SIZE) {
+      return { sufficientData: false };
+    }
+
+    const yourBalance = yourMetrics?.balance ?? (Number(yourCompany.current_balance) || 0);
+    const yourRunway = yourMetrics?.runway ?? BENCHMARK_RUNWAY_CAP_DAYS;
+
+    const avgBalance = peers.reduce((sum, p) => sum + p.balance, 0) / peers.length;
+    const avgRunway = peers.reduce((sum, p) => sum + p.runway, 0) / peers.length;
+    const belowOrEqual = peers.filter((p) => p.balance <= yourBalance).length;
+    const percentile = Math.round((belowOrEqual / peers.length) * 100);
+
+    return {
+      sufficientData: true,
+      group: yourGroup,
+      sampleSize: peers.length,
+      avg_balance: Math.round(avgBalance),
+      avg_runway: Math.round(avgRunway),
+      percentile,
+      yourBalance: Math.round(yourBalance),
+      yourRunway: Math.round(yourRunway),
+    };
+  });

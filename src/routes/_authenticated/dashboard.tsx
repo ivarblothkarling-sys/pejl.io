@@ -78,6 +78,7 @@ import {
   generateWeeklySummary,
   getConsolidatedDashboardData,
   getDashboardData,
+  getIndustryBenchmark,
   sendPaymentReminder,
   simulateScenario,
   updateMonthlyRevenueTarget,
@@ -191,6 +192,9 @@ function DashboardPage() {
     ReturnType<typeof getConsolidatedDashboardData>
   > | null>(null);
   const [consolidatedLoading, setConsolidatedLoading] = useState(false);
+  const [benchmark, setBenchmark] = useState<Awaited<
+    ReturnType<typeof getIndustryBenchmark>
+  > | null>(null);
   const [addCompanyAuthUrl, setAddCompanyAuthUrl] = useState<string | null>(null);
   const [addingCompany, setAddingCompany] = useState(false);
   const addCompanyForm = useMemo(() => {
@@ -296,6 +300,9 @@ function DashboardPage() {
       setData(result);
       setThresholdInput(String(result.profile.threshold));
       setSelectedCompanyId(result.companyId);
+      getIndustryBenchmark({ data: { companyId: result.companyId } })
+        .then(setBenchmark)
+        .catch(() => setBenchmark(null));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Kunde inte hämta data");
     } finally {
@@ -1495,6 +1502,17 @@ function DashboardPage() {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+            {benchmark?.sufficientData && benchmark.avg_balance !== 0 && (
+              <p className="text-xs text-muted-foreground mt-3">
+                {(() => {
+                  const diffPct = Math.round(
+                    ((benchmark.yourBalance - benchmark.avg_balance) / benchmark.avg_balance) * 100,
+                  );
+                  const direction = diffPct >= 0 ? "högre" : "lägre";
+                  return `Ditt saldo är ${Math.abs(diffPct)}% ${direction} än liknande bolag på Pejl (baserat på ${benchmark.sampleSize} anonyma bolag i din omsättningsklass).`;
+                })()}
+              </p>
+            )}
           </section>
 
           {/* Kommande skatter & avgifter */}

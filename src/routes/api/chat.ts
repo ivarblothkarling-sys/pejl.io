@@ -13,7 +13,11 @@ import { z } from "zod";
 
 import type { Database } from "@/integrations/supabase/types";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
-import { getCustomerRisk, getDashboardData } from "@/lib/api/finance.functions";
+import {
+  getCustomerRisk,
+  getDashboardData,
+  getIndustryBenchmark,
+} from "@/lib/api/finance.functions";
 import { computeForecast, formatMonthSv, formatSEK, type Tx } from "@/lib/forecast";
 
 type ChatRequestBody = { messages?: unknown; companyId?: string };
@@ -119,6 +123,13 @@ async function buildSystemPrompt(companyId?: string): Promise<string> {
     console.error("[chat] Kunde inte hämta kreditrisk-data:", err);
   }
 
+  let benchmark: Awaited<ReturnType<typeof getIndustryBenchmark>> | null = null;
+  try {
+    benchmark = await getIndustryBenchmark({ data: { companyId } });
+  } catch (err) {
+    console.error("[chat] Kunde inte hämta branschjämförelse:", err);
+  }
+
   const unpaid = transactions.filter((t) => !t.paid);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -177,6 +188,15 @@ async function buildSystemPrompt(companyId?: string): Promise<string> {
     ? `\n== Kassaflödesmål för ${formatMonthSv(forecast.monthlyRevenueProgress.month)} ==\nMål: ${formatSEK(forecast.monthlyRevenueProgress.target)}\nBokfört hittills i månaden: ${formatSEK(forecast.monthlyRevenueProgress.bookedSoFar)} (${forecast.monthlyRevenueProgress.percentOfTarget}% av målet)\nPrognos för hela månaden (bokfört hittills + redan fakturerat resterande av månaden): ${formatSEK(forecast.monthlyRevenueProgress.projectedTotal)}\n${forecast.monthlyRevenueProgress.onTrack ? "Kunden ligger på rätt spår att nå målet." : "Kunden ligger EFTER och riskerar att inte nå målet om inget förändras."}\nOm användaren frågar något i stil med "klarar jag mitt mål den här månaden?" — svara utifrån just den här datan (på rätt spår/efter, hur mycket kvar, hur stor andel av målet som redan är uppnått).`
     : `\n== Kassaflödesmål ==\nAnvändaren har inte satt något månadsmål. Om de frågar om att "klara sitt mål" — förklara kort att inget mål är satt och att de kan sätta ett i dashboarden.`;
 
+  const groupLabel: Record<string, string> = {
+    small: "under 500 000 kr/år i omsättning",
+    medium: "500 000–2 miljoner kr/år i omsättning",
+    large: "över 2 miljoner kr/år i omsättning",
+  };
+  const benchmarkBlock = benchmark?.sufficientData
+    ? `\n== Branschjämförelse (anonym, mot ${benchmark.sampleSize} andra Pejl-bolag i samma omsättningsklass: ${groupLabel[benchmark.group]}) ==\nDitt saldo: ${formatSEK(benchmark.yourBalance)}\nGenomsnittligt saldo i gruppen: ${formatSEK(benchmark.avg_balance)}\nDin kassaflödeshorisont: ${benchmark.yourRunway} dagar\nGenomsnittlig kassaflödeshorisont i gruppen: ${benchmark.avg_runway} dagar\nDu ligger på percentil ${benchmark.percentile} (högre är bättre — 100 betyder högst saldo i gruppen).\nOm användaren frågar "hur går det för mig jämfört med andra?" eller liknande — svara utifrån just de här siffrorna.`
+    : `\n== Branschjämförelse ==\nDet finns inte tillräckligt många andra bolag i samma omsättningsklass ännu (kräver minst 10, för att skydda enskilda användares integritet) — om användaren frågar hur de ligger till jämfört med andra, förklara kort att jämförelsen inte är tillgänglig än.`;
+
   return `Du är Pejl, en proaktiv och saklig ekonomiassistent för svenska småföretagare OCH deras redovisningskonsulter.
 Svara alltid på svenska, kort och kärnfullt – max 2–3 meningar, undvik långa utläggningar och upprepningar. Håll tonen krispig och konkret. Belopp i SEK, datum i ISO-format (YYYY-MM-DD).
 Använd ENDAST datan nedan – hitta inte på siffror. Svara kontextuellt utifrån den faktiska datan, inte generiskt. Om frågan inte rör datan, svara kort och hjälpsamt ändå.
@@ -211,6 +231,7 @@ ${suggestionsBlock}
 ${overdueBlock}
 ${creditRiskBlock}
 ${revenueTargetBlock}
+${benchmarkBlock}
 
 == Obetalda transaktioner kommande period ==
 ${unpaid
