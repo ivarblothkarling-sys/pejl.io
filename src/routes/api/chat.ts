@@ -181,7 +181,7 @@ async function buildSystemPrompt(companyId?: string): Promise<string> {
         )
         .join(
           "\n",
-        )}\nNär du nämner en kund som finns i listan ovan i ditt svar — inled kundens namn med samma emoji som i listan (🟢/🟡/🔴), t.ex. "🔴 Nordic Design AB". Hitta ALDRIG på en risknivå för en kund som inte finns i listan.`
+        )}\nNär du nämner en kund som finns i listan ovan i ditt svar — skriv kundens namn EXAKT enligt formatet \`risk:${"{green|yellow|red}"}:Kundnamn\` i inline-kod (med backticks), t.ex. \`risk:red:Nordic Design AB\` — risknivån ska matcha exakt vad som står för kunden ovan. Använd bara detta format för kundnamn som finns i listan, aldrig för andra ord eller för kunder utan känd kreditrisk. Hitta ALDRIG på en risknivå för en kund som inte finns i listan.`
     : "";
 
   const revenueTargetBlock = forecast.monthlyRevenueProgress

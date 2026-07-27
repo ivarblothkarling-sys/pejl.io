@@ -2014,6 +2014,45 @@ function TaxDot(props: { cx?: number; cy?: number; payload?: { hasTaxEvent?: boo
   );
 }
 
+const RISK_BADGE_STYLE: Record<"green" | "yellow" | "red", string> = {
+  green: "text-success bg-success/10 border-success/30",
+  yellow: "text-amber-500 bg-amber-500/10 border-amber-500/30",
+  red: "text-destructive bg-destructive/10 border-destructive/30",
+};
+
+function CustomerRiskBadge({ level, name }: { level: "green" | "yellow" | "red"; name: string }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${RISK_BADGE_STYLE[level]}`}
+    >
+      {name}
+    </span>
+  );
+}
+
+/**
+ * Streamdowns inlineCode-override i chatten — Claude instrueras (se
+ * chat.ts) att skriva kreditrisk-omnämnanden som `risk:green|yellow|red:Namn`
+ * i inline-kod istället för att lita på att en emoji följer med genom
+ * markdown-parsningen. Matchar det formatet renderas en riktig färgad
+ * badge; annat inline-kod-innehåll faller tillbaka till normal styling.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function ChatInlineCode(props: any) {
+  const { children, className } = props as { children?: React.ReactNode; className?: string };
+  const text =
+    typeof children === "string" ? children : Array.isArray(children) ? children.join("") : "";
+  const match = /^risk:(green|yellow|red):(.+)$/.exec(text);
+  if (match) {
+    return <CustomerRiskBadge level={match[1] as "green" | "yellow" | "red"} name={match[2]} />;
+  }
+  return (
+    <code className={`rounded bg-secondary px-1 py-0.5 font-mono text-xs ${className ?? ""}`}>
+      {children}
+    </code>
+  );
+}
+
 function ChatPanel({
   greeting,
   suggestions,
@@ -2187,7 +2226,9 @@ function ChatInner({
                       <MessageContent>{text}</MessageContent>
                     ) : (
                       <MessageContent className="bg-transparent border-0 p-0 shadow-none">
-                        <MessageResponse>{text}</MessageResponse>
+                        <MessageResponse components={{ inlineCode: ChatInlineCode }}>
+                          {text}
+                        </MessageResponse>
                       </MessageContent>
                     )}
                   </Message>
