@@ -12,6 +12,7 @@ import {
   Loader2,
   Sparkles,
   Trash2,
+  TrendingUp,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -21,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   getUserSettings,
   updateUserSettings,
@@ -31,7 +33,7 @@ import {
 } from "@/lib/api/settings.functions";
 import { getMonthlyReportPdf, updatePendingApprovalPreference } from "@/lib/api/finance.functions";
 import { createCheckoutSession } from "@/lib/api/billing.functions";
-import { getActiveShareLinks, revokeShareLink } from "@/lib/api/share.functions";
+import { createShareLink, getActiveShareLinks, revokeShareLink } from "@/lib/api/share.functions";
 import { disconnectTink, getTinkAuthUrl, getTinkStatus, syncTink } from "@/lib/api/tink.functions";
 import { AVAILABLE_PROVIDERS } from "@/lib/accounting/accountingService";
 import { AVAILABLE_CURRENCIES } from "@/lib/i18n/format";
@@ -78,9 +80,10 @@ function SettingsPage() {
   const [tinkLoading, setTinkLoading] = useState(false);
   const [tinkSyncing, setTinkSyncing] = useState(false);
   const [shareLinks, setShareLinks] = useState<
-    { token: string; created_at: string; expires_at: string }[]
+    { token: string; created_at: string; expires_at: string; view_type: string }[]
   >([]);
   const [revokingToken, setRevokingToken] = useState<string | null>(null);
+  const [creatingInvestorLink, setCreatingInvestorLink] = useState(false);
   const [pendingApprovalSaving, setPendingApprovalSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [downloadingReport, setDownloadingReport] = useState(false);
@@ -123,6 +126,28 @@ function SettingsPage() {
       toast.error(e instanceof Error ? e.message : "Kunde inte återkalla länken");
     } finally {
       setRevokingToken(null);
+    }
+  };
+
+  const createShareLinkFn = useServerFn(createShareLink);
+  const handleCreateInvestorLink = async () => {
+    setCreatingInvestorLink(true);
+    try {
+      const { token } = await createShareLinkFn({ data: { viewType: "investor" } });
+      const url = `${window.location.origin}/share/${token}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success("Investerarlänk skapad och kopierad", {
+          description: "Länken visar en förenklad vy utan fakturadetaljer. Giltig i 30 dagar.",
+        });
+      } catch {
+        toast.success("Investerarlänk skapad", { description: url });
+      }
+      loadShareLinks();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Kunde inte skapa investerarlänk");
+    } finally {
+      setCreatingInvestorLink(false);
     }
   };
 
@@ -558,14 +583,34 @@ function SettingsPage() {
         </section>
 
         {/* Delade länkar */}
-        {shareLinks.length > 0 && (
-          <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
-            <h2 className="text-base font-semibold">Delade länkar</h2>
-            <p className="text-xs text-muted-foreground mt-0.5 mb-4">
-              Aktiva länkar till din prognos. Vem som helst med länken kan se den tills den går ut
-              eller återkallas.
-            </p>
-            <div className="space-y-2">
+        <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-base font-semibold">Delade länkar</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Aktiva länkar till din prognos. Vem som helst med länken kan se den tills den går ut
+                eller återkallas.
+              </p>
+            </div>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleCreateInvestorLink}
+                    disabled={creatingInvestorLink}
+                  >
+                    <TrendingUp className="size-4" />
+                    {creatingInvestorLink ? "Skapar…" : "Dela med investerare"}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Delar en förenklad vy utan fakturadetaljer</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+          {shareLinks.length > 0 && (
+            <div className="space-y-2 mt-4">
               {shareLinks.map((link) => (
                 <div
                   key={link.token}
@@ -574,7 +619,12 @@ function SettingsPage() {
                   <div className="flex items-center gap-2 min-w-0">
                     <Link2 className="size-3.5 text-muted-foreground shrink-0" />
                     <div className="min-w-0">
-                      <div className="text-xs font-mono truncate">{link.token}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-xs font-mono truncate">{link.token}</div>
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground bg-secondary rounded-full px-1.5 py-0.5 shrink-0">
+                          {link.view_type === "investor" ? "Investerare" : "Redovisningskonsult"}
+                        </span>
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         Giltig till {formatDateSv(link.expires_at)}
                       </div>
@@ -592,8 +642,8 @@ function SettingsPage() {
                 </div>
               ))}
             </div>
-          </section>
-        )}
+          )}
+        </section>
 
         {/* Prognos-inställningar */}
         <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
