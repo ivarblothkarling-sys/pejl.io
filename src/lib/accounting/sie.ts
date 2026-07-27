@@ -12,6 +12,23 @@ const CP437_HIGH: string = (() => {
   );
 })();
 
+export type SieImportCandidate = { due_date: string; amount: number };
+
+/**
+ * Filtrerar bort SIE-transaktioner som redan importerats tidigare — matchar
+ * på due_date+amount, precis som en identisk rad i SIE-filen skulle se ut.
+ * Ren funktion, delad mellan importSieData (settings.functions.ts) och dess
+ * tester, så en omkörning av samma fil (eller en fil som delvis överlappar
+ * en tidigare import) inte dubblerar transaktioner.
+ */
+export function dedupeSieImports<T extends SieImportCandidate>(
+  candidates: T[],
+  existing: SieImportCandidate[],
+): T[] {
+  const existingKeys = new Set(existing.map((t) => `${t.due_date}|${Number(t.amount)}`));
+  return candidates.filter((t) => !existingKeys.has(`${t.due_date}|${Number(t.amount)}`));
+}
+
 export function decodeCP437(bytes: Uint8Array): string {
   let out = "";
   for (let i = 0; i < bytes.length; i++) {

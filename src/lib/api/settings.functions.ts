@@ -159,12 +159,8 @@ export const importSieData = createServerFn({ method: "POST" })
       .eq("source", "sie");
     if (existingErr) throw new Error(existingErr.message);
 
-    const existingKeys = new Set(
-      (existingSie ?? []).map((t) => `${t.due_date}|${Number(t.amount)}`),
-    );
-    const newTransactions = data.transactions.filter(
-      (t) => !existingKeys.has(`${t.due_date}|${t.amount}`),
-    );
+    const { dedupeSieImports } = await import("@/lib/accounting/sie");
+    const newTransactions = dedupeSieImports(data.transactions, existingSie ?? []);
 
     if (newTransactions.length > 0) {
       const rows = newTransactions.map((t) => ({
