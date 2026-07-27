@@ -23,7 +23,12 @@ export type AdminStats = {
   fortnoxConnected: number;
   tinkConnected: number;
   transactionCount: number;
-  recentSignups: Array<{ id: string; email: string; company_name: string | null; created_at: string }>;
+  recentSignups: Array<{
+    id: string;
+    email: string;
+    company_name: string | null;
+    created_at: string;
+  }>;
 };
 
 export const getAdminStats = createServerFn({ method: "GET" })
@@ -39,19 +44,28 @@ export const getAdminStats = createServerFn({ method: "GET" })
       supabaseAdmin.from("transactions").select("id", { count: "exact", head: true }),
       supabaseAdmin
         .from("profiles")
-        .select("id, company_name, created_at")
+        .select("id, created_at")
         .order("created_at", { ascending: false })
         .limit(10),
     ]);
 
     const recentIds = (recent.data ?? []).map((r) => r.id);
     const emailMap = new Map<string, string>();
+    const companyNameMap = new Map<string, string | null>();
     if (recentIds.length) {
       // auth.admin.listUsers returnerar alla — filtrera i minnet.
-      const { data: usersData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 200 });
+      const [{ data: usersData }, { data: companies }] = await Promise.all([
+        supabaseAdmin.auth.admin.listUsers({ perPage: 200 }),
+        supabaseAdmin
+          .from("user_companies")
+          .select("user_id, company_name")
+          .in("user_id", recentIds)
+          .eq("is_primary", true),
+      ]);
       for (const u of usersData?.users ?? []) {
         if (u.email && recentIds.includes(u.id)) emailMap.set(u.id, u.email);
       }
+      for (const c of companies ?? []) companyNameMap.set(c.user_id, c.company_name);
     }
 
     return {
@@ -62,7 +76,7 @@ export const getAdminStats = createServerFn({ method: "GET" })
       recentSignups: (recent.data ?? []).map((r) => ({
         id: r.id,
         email: emailMap.get(r.id) ?? "(okänd)",
-        company_name: r.company_name,
+        company_name: companyNameMap.get(r.id) ?? null,
         created_at: r.created_at,
       })),
     };
@@ -87,18 +101,28 @@ export const listAdminUsers = createServerFn({ method: "GET" })
     await assertAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const [{ data: profiles }, { data: usersData }, { data: fortnox }, { data: tink }, { data: roles }] =
-      await Promise.all([
-        supabaseAdmin
-          .from("profiles")
-          .select("id, company_name, current_balance, threshold, created_at")
-          .order("created_at", { ascending: false })
-          .limit(500),
-        supabaseAdmin.auth.admin.listUsers({ perPage: 500 }),
-        supabaseAdmin.from("fortnox_connections").select("user_id"),
-        supabaseAdmin.from("tink_connections").select("user_id"),
-        supabaseAdmin.from("user_roles").select("user_id, role"),
-      ]);
+    const [
+      { data: profiles },
+      { data: usersData },
+      { data: fortnox },
+      { data: tink },
+      { data: roles },
+      { data: primaryCompanies },
+    ] = await Promise.all([
+      supabaseAdmin
+        .from("profiles")
+        .select("id, created_at")
+        .order("created_at", { ascending: false })
+        .limit(500),
+      supabaseAdmin.auth.admin.listUsers({ perPage: 500 }),
+      supabaseAdmin.from("fortnox_connections").select("user_id"),
+      supabaseAdmin.from("tink_connections").select("user_id"),
+      supabaseAdmin.from("user_roles").select("user_id, role"),
+      supabaseAdmin
+        .from("user_companies")
+        .select("user_id, company_name, current_balance, threshold")
+        .eq("is_primary", true),
+    ]);
 
     const emails = new Map<string, string>();
     for (const u of usersData?.users ?? []) if (u.email) emails.set(u.id, u.email);
@@ -110,26 +134,38 @@ export const listAdminUsers = createServerFn({ method: "GET" })
       list.push(r.role);
       roleMap.set(r.user_id, list);
     }
+    const companyMap = new Map<
+      string,
+      { company_name: string | null; current_balance: number; threshold: number }
+    >();
+    for (const c of primaryCompanies ?? []) {
+      companyMap.set(c.user_id, {
+        company_name: c.company_name,
+        current_balance: Number(c.current_balance ?? 0),
+        threshold: Number(c.threshold ?? 0),
+      });
+    }
 
     // Räkna transaktioner per user via in-memory-gruppering
-    const { data: txRows } = await supabaseAdmin
-      .from("transactions")
-      .select("user_id");
+    const { data: txRows } = await supabaseAdmin.from("transactions").select("user_id");
     const txMap = new Map<string, number>();
     for (const row of txRows ?? []) txMap.set(row.user_id, (txMap.get(row.user_id) ?? 0) + 1);
 
-    return (profiles ?? []).map((p) => ({
-      id: p.id,
-      email: emails.get(p.id) ?? "(okänd)",
-      company_name: p.company_name,
-      current_balance: Number(p.current_balance ?? 0),
-      threshold: Number(p.threshold ?? 0),
-      roles: roleMap.get(p.id) ?? [],
-      fortnox: fortnoxSet.has(p.id),
-      tink: tinkSet.has(p.id),
-      created_at: p.created_at,
-      transaction_count: txMap.get(p.id) ?? 0,
-    }));
+    return (profiles ?? []).map((p) => {
+      const company = companyMap.get(p.id);
+      return {
+        id: p.id,
+        email: emails.get(p.id) ?? "(okänd)",
+        company_name: company?.company_name ?? null,
+        current_balance: company?.current_balance ?? 0,
+        threshold: company?.threshold ?? 0,
+        roles: roleMap.get(p.id) ?? [],
+        fortnox: fortnoxSet.has(p.id),
+        tink: tinkSet.has(p.id),
+        created_at: p.created_at,
+        transaction_count: txMap.get(p.id) ?? 0,
+      };
+    });
   });
 
 export const toggleAdminUserRole = createServerFn({ method: "POST" })

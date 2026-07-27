@@ -15,7 +15,28 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, BellRing, CalendarClock, Check, CheckCircle2, Copy, FlaskConical, Landmark, Link2, LogOut, PlayCircle, Settings as SettingsIcon, Share2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Users, Wallet, X } from "lucide-react";
+import {
+  AlertTriangle,
+  BellRing,
+  CalendarClock,
+  Check,
+  CheckCircle2,
+  Copy,
+  FlaskConical,
+  Landmark,
+  Link2,
+  LogOut,
+  PlayCircle,
+  Settings as SettingsIcon,
+  Share2,
+  ShieldCheck,
+  Sparkles,
+  TrendingDown,
+  TrendingUp,
+  Users,
+  Wallet,
+  X,
+} from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -38,6 +59,14 @@ import {
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { NotificationBell } from "@/components/NotificationBell";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   computeForecast,
   computeSuggestions,
   formatDateSv,
@@ -47,6 +76,7 @@ import {
 } from "@/lib/forecast";
 import {
   generateWeeklySummary,
+  getConsolidatedDashboardData,
   getDashboardData,
   sendPaymentReminder,
   simulateScenario,
@@ -55,8 +85,15 @@ import {
   updateThreshold,
 } from "@/lib/api/finance.functions";
 import { createShareLink } from "@/lib/api/share.functions";
-import { disconnectFortnox, getFortnoxAuthUrl, getFortnoxStatus, syncFortnox } from "@/lib/api/fortnox.functions";
+import { getUserCompanies, type UserCompany } from "@/lib/api/companies.functions";
+import {
+  disconnectFortnox,
+  getFortnoxAuthUrl,
+  getFortnoxStatus,
+  syncFortnox,
+} from "@/lib/api/fortnox.functions";
 import { disconnectTink, getTinkAuthUrl, getTinkStatus, syncTink } from "@/lib/api/tink.functions";
+import { ChevronDown, Building2, Layers } from "lucide-react";
 
 import logo from "@/assets/pejl-logo.png";
 
@@ -64,7 +101,10 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
     meta: [
       { title: "Översikt — Pejl" },
-      { name: "description", content: "Dagens saldo och 30-dagars likviditetsprognos för ditt företag." },
+      {
+        name: "description",
+        content: "Dagens saldo och 30-dagars likviditetsprognos för ditt företag.",
+      },
     ],
   }),
   component: DashboardPage,
@@ -114,8 +154,7 @@ const getFortnoxRedirectUri = () =>
   typeof window !== "undefined"
     ? `${window.location.origin}/auth/fortnox/callback`
     : "https://pejl.io/auth/fortnox/callback";
-const getTinkRedirectUri = () =>
-  "https://pejl.io/auth/tink/callback";
+const getTinkRedirectUri = () => "https://pejl.io/auth/tink/callback";
 
 type TinkStatus = {
   connected: boolean;
@@ -144,6 +183,24 @@ function DashboardPage() {
   const [isAgency, setIsAgency] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const chatInjectRef = useRef<((text: string) => void) | null>(null);
+
+  const [companies, setCompanies] = useState<UserCompany[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
+  const [consolidated, setConsolidated] = useState(false);
+  const [consolidatedData, setConsolidatedData] = useState<Awaited<
+    ReturnType<typeof getConsolidatedDashboardData>
+  > | null>(null);
+  const [consolidatedLoading, setConsolidatedLoading] = useState(false);
+  const [addCompanyAuthUrl, setAddCompanyAuthUrl] = useState<string | null>(null);
+  const [addingCompany, setAddingCompany] = useState(false);
+  const addCompanyForm = useMemo(() => {
+    if (!addCompanyAuthUrl) return null;
+    const url = new URL(addCompanyAuthUrl);
+    return {
+      action: `${url.origin}${url.pathname}`,
+      params: Array.from(url.searchParams.entries()),
+    };
+  }, [addCompanyAuthUrl]);
 
   const [fortnoxAuthUrl, setFortnoxAuthUrl] = useState<string | null>(null);
   const fortnoxForm = useMemo(() => {
@@ -179,6 +236,7 @@ function DashboardPage() {
           action: simulateAction,
           amount: option.needsAmount ? Number(simulateAmount) || 0 : 0,
           date: simulateDate,
+          companyId: selectedCompanyId ?? undefined,
         },
       });
       setSimulationResult(result);
@@ -205,11 +263,30 @@ function DashboardPage() {
     }
   };
 
+  const loadFortnoxStatusFor = (companyId?: string) => {
+    getFortnoxStatus({ data: { companyId } })
+      .then((s) => {
+        setFortnoxConnected(s.connected);
+        setFortnoxAuthUrl(null);
+        if (!s.connected) {
+          setFortnoxLoading(true);
+          getFortnoxAuthUrl({ data: { redirectUri: getFortnoxRedirectUri(), companyId } })
+            .then(({ url }) => setFortnoxAuthUrl(url))
+            .catch((err) => {
+              console.error("[Fortnox] Kunde inte förbereda OAuth-URL:", err);
+              toast.error(
+                err instanceof Error ? err.message : "Kunde inte förbereda Fortnox-koppling",
+              );
+            })
+            .finally(() => setFortnoxLoading(false));
+        }
+      })
+      .catch(() => {});
+  };
 
-
-  const refresh = async () => {
+  const refresh = async (companyId?: string) => {
     try {
-      const result = await getDashboardData();
+      const result = await getDashboardData({ data: { companyId } });
       // Redirect till onboarding om användaren inte har gått igenom flödet
       const p = result.profile as { onboarding_completed?: boolean };
       if (p.onboarding_completed === false) {
@@ -218,6 +295,7 @@ function DashboardPage() {
       }
       setData(result);
       setThresholdInput(String(result.profile.threshold));
+      setSelectedCompanyId(result.companyId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Kunde inte hämta data");
     } finally {
@@ -225,8 +303,51 @@ function DashboardPage() {
     }
   };
 
+  const loadCompanies = () => {
+    getUserCompanies()
+      .then((rows) => setCompanies(rows))
+      .catch(() => {});
+  };
+
+  const handleSelectCompany = async (companyId: string) => {
+    if (companyId === selectedCompanyId && !consolidated) return;
+    setConsolidated(false);
+    setSimulationResult(null);
+    setSummary(null);
+    setLoading(true);
+    await refresh(companyId);
+    loadFortnoxStatusFor(companyId);
+  };
+
+  const handleConsolidatedView = async () => {
+    setConsolidated(true);
+    setConsolidatedLoading(true);
+    try {
+      const result = await getConsolidatedDashboardData();
+      setConsolidatedData(result);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte hämta konsoliderad vy");
+    } finally {
+      setConsolidatedLoading(false);
+    }
+  };
+
+  const handlePrepareAddCompany = async () => {
+    setAddingCompany(true);
+    try {
+      const { url } = await getFortnoxAuthUrl({
+        data: { redirectUri: getFortnoxRedirectUri(), newCompany: true },
+      });
+      setAddCompanyAuthUrl(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte förbereda ny bolagskoppling");
+      setAddingCompany(false);
+    }
+  };
+
   useEffect(() => {
     refresh();
+    loadCompanies();
     (async () => {
       const { data: sess } = await supabase.auth.getUser();
       const uid = sess.user?.id;
@@ -239,25 +360,7 @@ function DashboardPage() {
         .maybeSingle();
       setIsAdmin(!!adminRow);
     })();
-    getFortnoxStatus()
-      .then((s) => {
-        setFortnoxConnected(s.connected);
-        if (!s.connected) {
-          setFortnoxLoading(true);
-          console.log("[Fortnox] Förbereder OAuth-länk. redirectUri =", getFortnoxRedirectUri());
-          getFortnoxAuthUrl({ data: { redirectUri: getFortnoxRedirectUri() } })
-            .then(({ url }) => {
-              console.log("[Fortnox] OAuth-URL förberedd:", url);
-              setFortnoxAuthUrl(url);
-            })
-            .catch((err) => {
-              console.error("[Fortnox] Kunde inte förbereda OAuth-URL:", err);
-              toast.error(err instanceof Error ? err.message : "Kunde inte förbereda Fortnox-koppling");
-            })
-            .finally(() => setFortnoxLoading(false));
-        }
-      })
-      .catch(() => {});
+    loadFortnoxStatusFor();
     // Show success toast if we just came back from the OAuth callback
     try {
       const params = new URLSearchParams(window.location.search);
@@ -289,7 +392,8 @@ function DashboardPage() {
         const { data: sess } = await supabase.auth.getSession();
         const token = sess.session?.access_token;
         if (!token) return;
-        const res = await fetch("/api/chat", { headers: { Authorization: `Bearer ${token}` } });
+        const url = selectedCompanyId ? `/api/chat?companyId=${selectedCompanyId}` : "/api/chat";
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
         if (!res.ok) return;
         const json = (await res.json()) as { suggestions?: string[] };
         setAiSuggestions(Array.isArray(json.suggestions) ? json.suggestions : []);
@@ -297,7 +401,7 @@ function DashboardPage() {
         /* noop — chattförslagen är en trevlig detalj, inte kritiska */
       }
     })();
-  }, []);
+  }, [selectedCompanyId]);
 
   const getTinkAuthUrlFn = useServerFn(getTinkAuthUrl);
 
@@ -333,7 +437,6 @@ function DashboardPage() {
     }
   };
 
-
   const handleConnectFortnox = async () => {
     console.log("[Fortnox] Koppla-knapp klickad. redirectUri =", getFortnoxRedirectUri());
     console.log("[Fortnox] Skickar native form-submit till Fortnox i toppfliken.");
@@ -345,9 +448,9 @@ function DashboardPage() {
   const handleSyncFortnox = async () => {
     setFortnoxSyncing(true);
     try {
-      const result = await syncFortnoxFn();
+      const result = await syncFortnoxFn({ data: { companyId: selectedCompanyId ?? undefined } });
       toast.success(`Synkat från Fortnox — ${result.imported} poster importerade.`);
-      await refresh();
+      await refresh(selectedCompanyId ?? undefined);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Kunde inte synka Fortnox");
     } finally {
@@ -358,10 +461,10 @@ function DashboardPage() {
   const handleDisconnectFortnox = async () => {
     if (!confirm("Koppla bort Fortnox och ta bort importerade fakturor?")) return;
     try {
-      await disconnectFortnoxFn();
+      await disconnectFortnoxFn({ data: { companyId: selectedCompanyId ?? undefined } });
       setFortnoxConnected(false);
       toast.success("Fortnox bortkopplad.");
-      await refresh();
+      await refresh(selectedCompanyId ?? undefined);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Kunde inte koppla bort Fortnox");
     }
@@ -390,7 +493,12 @@ function DashboardPage() {
     if (!confirm("Koppla bort banken?")) return;
     try {
       await disconnectTinkFn();
-      setTinkStatus({ connected: false, bankBalance: null, bankCurrency: null, lastSyncedAt: null });
+      setTinkStatus({
+        connected: false,
+        bankBalance: null,
+        bankCurrency: null,
+        lastSyncedAt: null,
+      });
       toast.success("Bank bortkopplad.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Kunde inte koppla bort banken");
@@ -401,7 +509,9 @@ function DashboardPage() {
   const handleWeeklySummary = async () => {
     setSummaryLoading(true);
     try {
-      const result = await generateSummaryFn();
+      const result = await generateSummaryFn({
+        data: { companyId: selectedCompanyId ?? undefined },
+      });
       setSummary(result.summary);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "AI-fel");
@@ -417,10 +527,10 @@ function DashboardPage() {
       return;
     }
     try {
-      await updateThreshold({ data: { threshold: v } });
+      await updateThreshold({ data: { threshold: v, companyId: selectedCompanyId ?? undefined } });
       toast.success("Gräns uppdaterad");
       setEditingThreshold(false);
-      await refresh();
+      await refresh(selectedCompanyId ?? undefined);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Kunde inte spara");
     }
@@ -433,10 +543,12 @@ function DashboardPage() {
       return;
     }
     try {
-      await updateMonthlyRevenueTarget({ data: { target: v } });
+      await updateMonthlyRevenueTarget({
+        data: { target: v, companyId: selectedCompanyId ?? undefined },
+      });
       toast.success("Månadsmål uppdaterat");
       setEditingRevenueTarget(false);
-      await refresh();
+      await refresh(selectedCompanyId ?? undefined);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Kunde inte spara");
     }
@@ -444,10 +556,12 @@ function DashboardPage() {
 
   const handleClearRevenueTarget = async () => {
     try {
-      await updateMonthlyRevenueTarget({ data: { target: null } });
+      await updateMonthlyRevenueTarget({
+        data: { target: null, companyId: selectedCompanyId ?? undefined },
+      });
       toast.success("Månadsmål borttaget");
       setEditingRevenueTarget(false);
-      await refresh();
+      await refresh(selectedCompanyId ?? undefined);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Kunde inte spara");
     }
@@ -491,7 +605,6 @@ function DashboardPage() {
     setTimeout(() => setShareCopied(false), 2500);
   };
 
-
   const demoData = useMemo<DashData | null>(() => {
     if (!demoStage || !data) return null;
     const today = new Date();
@@ -503,10 +616,42 @@ function DashboardPage() {
     };
     const invoiceDay = demoStage === "resolved" ? 2 : 10;
     const txs: Tx[] = [
-      { id: "demo-invoice", kind: "income", amount: 60000, due_date: iso(invoiceDay), description: "Kundfaktura #2041 – Acme AB", paid: false, category: "regular" },
-      { id: "demo-salary", kind: "expense", amount: 45000, due_date: iso(3), description: "Löner – utbetalning", paid: false, category: "regular" },
-      { id: "demo-rent", kind: "expense", amount: 18000, due_date: iso(5), description: "Hyra kontor", paid: false, category: "regular" },
-      { id: "demo-vat", kind: "expense", amount: 12400, due_date: iso(9), description: "Moms", paid: false, category: "tax" },
+      {
+        id: "demo-invoice",
+        kind: "income",
+        amount: 60000,
+        due_date: iso(invoiceDay),
+        description: "Kundfaktura #2041 – Acme AB",
+        paid: false,
+        category: "regular",
+      },
+      {
+        id: "demo-salary",
+        kind: "expense",
+        amount: 45000,
+        due_date: iso(3),
+        description: "Löner – utbetalning",
+        paid: false,
+        category: "regular",
+      },
+      {
+        id: "demo-rent",
+        kind: "expense",
+        amount: 18000,
+        due_date: iso(5),
+        description: "Hyra kontor",
+        paid: false,
+        category: "regular",
+      },
+      {
+        id: "demo-vat",
+        kind: "expense",
+        amount: 12400,
+        due_date: iso(9),
+        description: "Moms",
+        paid: false,
+        category: "tax",
+      },
     ];
     const startBalance = 8200;
     const threshold = 15000;
@@ -518,7 +663,12 @@ function DashboardPage() {
     const sugg = computeSuggestions(fc, txs, today);
     return {
       ...data,
-      profile: { ...data.profile, current_balance: startBalance, threshold, company_name: "Demo AB" },
+      profile: {
+        ...data.profile,
+        current_balance: startBalance,
+        threshold,
+        company_name: "Demo AB",
+      },
       forecast: fc,
       transactions: txs,
       suggestions: sugg,
@@ -572,9 +722,7 @@ function DashboardPage() {
     ? Math.max(
         0,
         Math.round(
-          (new Date(forecast.breachDate).getTime() -
-            new Date().setHours(0, 0, 0, 0)) /
-            86_400_000,
+          (new Date(forecast.breachDate).getTime() - new Date().setHours(0, 0, 0, 0)) / 86_400_000,
         ),
       )
     : 0;
@@ -596,7 +744,7 @@ function DashboardPage() {
     })
     .filter((x): x is { tx: Tx; balanceAfter: number } => x !== null);
 
-  const handleSuggestionClick = (s: typeof view.suggestions[number]) => {
+  const handleSuggestionClick = (s: (typeof view.suggestions)[number]) => {
     if (demoStage === "critical" && s.kind === "remind") {
       setDemoStage("resolved");
       toast.success("Påminnelse skickad", {
@@ -628,7 +776,46 @@ function DashboardPage() {
             <img src={logo} alt="Pejl" width={32} height={32} />
             <div>
               <div className="font-semibold leading-none">Pejl</div>
-              <div className="text-xs text-muted-foreground leading-none mt-0.5">{profile.company_name}</div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex items-center gap-1 text-xs text-muted-foreground leading-none mt-1 hover:text-foreground">
+                    {consolidated ? "Konsoliderad vy" : profile.company_name}
+                    <ChevronDown className="size-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuLabel>Bolag</DropdownMenuLabel>
+                  {companies.map((c) => (
+                    <DropdownMenuItem
+                      key={c.id}
+                      onClick={() => handleSelectCompany(c.id)}
+                      className={
+                        !consolidated && c.id === selectedCompanyId ? "font-medium" : undefined
+                      }
+                    >
+                      <Building2 className="size-3.5" />
+                      {c.company_name}
+                      {c.is_primary && (
+                        <span className="ml-auto text-[10px] text-muted-foreground">Primär</span>
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                  {companies.length > 1 && (
+                    <DropdownMenuItem
+                      onClick={handleConsolidatedView}
+                      className={consolidated ? "font-medium" : undefined}
+                    >
+                      <Layers className="size-3.5" />
+                      Konsoliderad vy (alla bolag)
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handlePrepareAddCompany}>
+                    <Link2 className="size-3.5" />
+                    Anslut ytterligare bolag
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -652,732 +839,844 @@ function DashboardPage() {
               </Button>
             </Link>
             <NotificationBell />
-            <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-muted-foreground">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSignOut}
+              className="text-muted-foreground"
+            >
               <LogOut className="size-4" /> Logga ut
             </Button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 pt-6 space-y-6">
-        {/* Demo banner */}
-        {demoStage === null ? (
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-4 py-3">
-            <div className="text-sm">
-              <div className="font-medium text-foreground">Vill du se hur Pejl varnar i en krissituation?</div>
-              <div className="text-xs text-muted-foreground">Tre klick: kritiskt scenario → förslag → läget räddat.</div>
-            </div>
-            <Button size="sm" onClick={() => setDemoStage("critical")}>
-              <PlayCircle className="size-4" /> Visa demo-scenario
-            </Button>
-          </div>
-        ) : (
-          <div
-            className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
-              demoStage === "resolved"
-                ? "border-success/40 bg-success/10"
-                : "border-destructive/40 bg-destructive/5"
-            }`}
-          >
-            <div className="text-sm flex items-center gap-2">
-              {demoStage === "resolved" ? (
-                <ShieldCheck className="size-4 text-success" />
-              ) : (
-                <AlertTriangle className="size-4 text-destructive" />
-              )}
-              <span className="font-medium text-foreground">
-                Demo-läge — {demoStage === "resolved" ? "läget räddat" : "kritiskt scenario"}
-              </span>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => setDemoStage(null)}>
-              <X className="size-4" /> Avsluta demo
-            </Button>
-          </div>
-        )}
-
-        {/* KPI row */}
-        <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <KpiCard
-            icon={<Wallet className="size-4" />}
-            label="Saldo idag"
-            value={<CountUp value={forecast.startBalance} duration={800} />}
-            sub={
-              !(tinkStatus?.connected && tinkStatus.bankBalance != null)
-                ? "Koppla bank för exakt saldo"
-                : undefined
-            }
-          />
-          {tinkStatus?.connected && tinkStatus.bankBalance != null && (
-            <KpiCard
-              icon={<Landmark className="size-4" />}
-              label="Banksaldo"
-              value={<CountUp value={tinkStatus.bankBalance} duration={800} />}
-              sub={tinkStatus.bankCurrency ?? undefined}
-            />
-          )}
-          <KpiCard
-            icon={forecast.endBalance >= forecast.startBalance ? <TrendingUp className="size-4 text-success" /> : <TrendingDown className="size-4 text-destructive" />}
-            label="Om 30 dagar"
-            value={formatSEK(forecast.endBalance)}
-          />
-          <KpiCard
-            icon={<TrendingDown className="size-4" />}
-            label="Lägsta saldo"
-            value={formatSEK(forecast.minBalance)}
-            sub={formatDateSv(forecast.minDate)}
-          />
-          <KpiCard
-            icon={<AlertTriangle className="size-4" />}
-            label="Varningsgräns"
-            value={formatSEK(forecast.threshold)}
-            action={
-              <button
-                onClick={() => setEditingThreshold((v) => !v)}
-                className="text-xs text-muted-foreground hover:text-foreground underline"
-              >
-                Ändra
-              </button>
-            }
-          />
-        </section>
-
-        {tinkStatus?.connected && tinkStatus.bankBalance != null &&
-          Math.abs(tinkStatus.bankBalance - forecast.startBalance) > 100 && (
-          <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 flex items-start gap-3">
-            <AlertTriangle className="size-5 text-amber-500 shrink-0 mt-0.5" />
-            <div className="text-sm text-foreground">
-              Ditt Fortnox-saldo och bankens saldo skiljer sig med{" "}
-              <strong>{formatSEK(Math.abs(tinkStatus.bankBalance - forecast.startBalance))}</strong>
-              {" "}— troligen obetalda fakturor eller transaktioner som inte bokförts ännu.
-            </div>
-          </div>
-        )}
-
-
-        {(data.awaitingApprovalSum > 0 || data.approvedPendingSum > 0) && (
-          <div className="rounded-2xl border border-border bg-card p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-sm">
-              <div className="font-medium text-foreground">
-                Du har {formatSEK(data.approvedPendingSum)} i godkända fakturor och{" "}
-                {formatSEK(data.awaitingApprovalSum)} som väntar på attest.
-              </div>
-              {data.awaitingApprovalSum > 0 && (
-                <div className="text-muted-foreground text-xs mt-1">
-                  {data.includePendingInForecast
-                    ? "Attest-fakturor räknas just nu med i prognosen."
-                    : "Attest-fakturor räknas inte med i prognosen — bara godkända fakturor är bekräftade utgifter."}
+      {consolidated ? (
+        <ConsolidatedMain data={consolidatedData} loading={consolidatedLoading} />
+      ) : (
+        <main className="max-w-5xl mx-auto px-4 pt-6 space-y-6">
+          {/* Demo banner */}
+          {demoStage === null ? (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-4 py-3">
+              <div className="text-sm">
+                <div className="font-medium text-foreground">
+                  Vill du se hur Pejl varnar i en krissituation?
                 </div>
-              )}
+                <div className="text-xs text-muted-foreground">
+                  Tre klick: kritiskt scenario → förslag → läget räddat.
+                </div>
+              </div>
+              <Button size="sm" onClick={() => setDemoStage("critical")}>
+                <PlayCircle className="size-4" /> Visa demo-scenario
+              </Button>
             </div>
-            {data.awaitingApprovalSum > 0 && (
-              <Button
-                variant={data.includePendingInForecast ? "outline" : "default"}
-                size="sm"
-                onClick={async () => {
-                  try {
-                    await updatePendingApprovalPreference({ data: { include: !data.includePendingInForecast } });
-                    await refresh();
-                    toast.success(
-                      !data.includePendingInForecast
-                        ? "Attest-fakturor inkluderas nu i prognosen."
-                        : "Attest-fakturor räknas inte längre med.",
-                    );
-                  } catch (err) {
-                    toast.error(err instanceof Error ? err.message : "Kunde inte uppdatera inställning");
-                  }
-                }}
-              >
-                {data.includePendingInForecast ? "Ta bort från prognos" : "Inkludera i prognos"}
-              </Button>
-            )}
-          </div>
-        )}
-
-
-
-        <div className="flex flex-wrap items-center gap-3 -mt-2">
-          {fortnoxConnected ? (
-            <>
-              <span className="inline-flex items-center gap-2 text-sm font-medium text-success bg-success/10 border border-success/30 rounded-full px-3 py-1.5">
-                <CheckCircle2 className="size-4" /> Fortnox ansluten
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSyncFortnox}
-                disabled={fortnoxSyncing}
-              >
-                {fortnoxSyncing ? "Synkar…" : "Synka Fortnox"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleDisconnectFortnox}
-                className="text-muted-foreground hover:text-destructive"
-              >
-                Koppla bort
-              </Button>
-            </>
-          ) : fortnoxForm ? (
-            <form action={fortnoxForm.action} method="GET" target="_top" onSubmit={handleConnectFortnox}>
-              {fortnoxForm.params.map(([name, value]) => (
-                <input key={name} type="hidden" name={name} value={value} />
-              ))}
-              <Button type="submit" variant="default" size="sm">
-                <Link2 className="size-4" />
-                Koppla Fortnox
-              </Button>
-            </form>
           ) : (
-            <Button variant="default" size="sm" disabled>
-              <Link2 className="size-4" />
-              {fortnoxLoading ? "Förbereder Fortnox…" : "Koppla Fortnox"}
-            </Button>
-          )}
-          {tinkStatus?.connected ? (
-            <>
-              <span className="inline-flex items-center gap-2 text-sm font-medium text-success bg-success/10 border border-success/30 rounded-full px-3 py-1.5">
-                <Landmark className="size-4" /> Bank ansluten
-              </span>
-              <Button variant="outline" size="sm" onClick={handleSyncTink} disabled={tinkSyncing}>
-                {tinkSyncing ? "Synkar…" : "Synka bank"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleDisconnectTink}
-                className="text-muted-foreground hover:text-destructive"
-              >
-                Koppla bort bank
-              </Button>
-            </>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleConnectTink}
-              disabled={tinkLoading}
+            <div
+              className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
+                demoStage === "resolved"
+                  ? "border-success/40 bg-success/10"
+                  : "border-destructive/40 bg-destructive/5"
+              }`}
             >
-              <Landmark className="size-4" />
-              {tinkLoading ? "Förbereder bank…" : "Koppla bank"}
-            </Button>
-          )}
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleShare}
-            disabled={shareLoading}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <Share2 className="size-4" />
-            {shareLoading ? "Skapar länk…" : "Dela med din redovisningskonsult →"}
-          </Button>
-          {shareUrl && (
-            <div className="flex flex-col gap-1">
-              <button
-                onClick={copyShareUrl}
-                className="inline-flex items-center gap-2 text-xs bg-secondary border border-border rounded-full px-3 py-1.5 hover:bg-secondary/70 max-w-full"
-              >
-                {shareCopied ? <Check className="size-3.5 text-success shrink-0" /> : <Copy className="size-3.5 shrink-0" />}
-                <span className="truncate font-mono">{shareUrl}</span>
-              </button>
-              <span className="text-xs text-muted-foreground">Länken är giltig i 30 dagar.</span>
+              <div className="text-sm flex items-center gap-2">
+                {demoStage === "resolved" ? (
+                  <ShieldCheck className="size-4 text-success" />
+                ) : (
+                  <AlertTriangle className="size-4 text-destructive" />
+                )}
+                <span className="font-medium text-foreground">
+                  Demo-läge — {demoStage === "resolved" ? "läget räddat" : "kritiskt scenario"}
+                </span>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setDemoStage(null)}>
+                <X className="size-4" /> Avsluta demo
+              </Button>
             </div>
           )}
-        </div>
 
-
-        {editingThreshold && (
-          <div className="bg-card border border-border rounded-xl p-4 flex items-end gap-2 max-w-md">
-            <div className="flex-1">
-              <Label htmlFor="threshold">Ny varningsgräns (SEK)</Label>
-              <Input
-                id="threshold"
-                type="number"
-                value={thresholdInput}
-                onChange={(e) => setThresholdInput(e.target.value)}
+          {/* KPI row */}
+          <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <KpiCard
+              icon={<Wallet className="size-4" />}
+              label="Saldo idag"
+              value={<CountUp value={forecast.startBalance} duration={800} />}
+              sub={
+                !(tinkStatus?.connected && tinkStatus.bankBalance != null)
+                  ? "Koppla bank för exakt saldo"
+                  : undefined
+              }
+            />
+            {tinkStatus?.connected && tinkStatus.bankBalance != null && (
+              <KpiCard
+                icon={<Landmark className="size-4" />}
+                label="Banksaldo"
+                value={<CountUp value={tinkStatus.bankBalance} duration={800} />}
+                sub={tinkStatus.bankCurrency ?? undefined}
               />
-            </div>
-            <Button onClick={handleSaveThreshold}>Spara</Button>
-          </div>
-        )}
-
-        {/* Kassaflödesmål */}
-        <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
-          {forecast.monthlyRevenueProgress ? (
-            <>
-              <div className="flex items-center justify-between gap-3 mb-3">
-                <h3 className="font-semibold">
-                  Du är på {forecast.monthlyRevenueProgress.percentOfTarget}% av ditt månadsmål
-                  för {formatMonthSv(forecast.monthlyRevenueProgress.month)}
-                </h3>
+            )}
+            <KpiCard
+              icon={
+                forecast.endBalance >= forecast.startBalance ? (
+                  <TrendingUp className="size-4 text-success" />
+                ) : (
+                  <TrendingDown className="size-4 text-destructive" />
+                )
+              }
+              label="Om 30 dagar"
+              value={formatSEK(forecast.endBalance)}
+            />
+            <KpiCard
+              icon={<TrendingDown className="size-4" />}
+              label="Lägsta saldo"
+              value={formatSEK(forecast.minBalance)}
+              sub={formatDateSv(forecast.minDate)}
+            />
+            <KpiCard
+              icon={<AlertTriangle className="size-4" />}
+              label="Varningsgräns"
+              value={formatSEK(forecast.threshold)}
+              action={
                 <button
-                  onClick={() => {
-                    setRevenueTargetInput(String(forecast.monthlyRevenueProgress!.target));
-                    setEditingRevenueTarget((v) => !v);
-                  }}
-                  className="text-xs text-muted-foreground hover:text-foreground underline shrink-0"
+                  onClick={() => setEditingThreshold((v) => !v)}
+                  className="text-xs text-muted-foreground hover:text-foreground underline"
                 >
                   Ändra
                 </button>
+              }
+            />
+          </section>
+
+          {tinkStatus?.connected &&
+            tinkStatus.bankBalance != null &&
+            Math.abs(tinkStatus.bankBalance - forecast.startBalance) > 100 && (
+              <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 flex items-start gap-3">
+                <AlertTriangle className="size-5 text-amber-500 shrink-0 mt-0.5" />
+                <div className="text-sm text-foreground">
+                  Ditt Fortnox-saldo och bankens saldo skiljer sig med{" "}
+                  <strong>
+                    {formatSEK(Math.abs(tinkStatus.bankBalance - forecast.startBalance))}
+                  </strong>{" "}
+                  — troligen obetalda fakturor eller transaktioner som inte bokförts ännu.
+                </div>
               </div>
-              <div className="w-full h-2.5 rounded-full bg-secondary overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${forecast.monthlyRevenueProgress.onTrack ? "bg-success" : "bg-amber-500"}`}
-                  style={{
-                    width: `${Math.min(100, Math.max(0, forecast.monthlyRevenueProgress.percentOfTarget))}%`,
+            )}
+
+          {(data.awaitingApprovalSum > 0 || data.approvedPendingSum > 0) && (
+            <div className="rounded-2xl border border-border bg-card p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm">
+                <div className="font-medium text-foreground">
+                  Du har {formatSEK(data.approvedPendingSum)} i godkända fakturor och{" "}
+                  {formatSEK(data.awaitingApprovalSum)} som väntar på attest.
+                </div>
+                {data.awaitingApprovalSum > 0 && (
+                  <div className="text-muted-foreground text-xs mt-1">
+                    {data.includePendingInForecast
+                      ? "Attest-fakturor räknas just nu med i prognosen."
+                      : "Attest-fakturor räknas inte med i prognosen — bara godkända fakturor är bekräftade utgifter."}
+                  </div>
+                )}
+              </div>
+              {data.awaitingApprovalSum > 0 && (
+                <Button
+                  variant={data.includePendingInForecast ? "outline" : "default"}
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await updatePendingApprovalPreference({
+                        data: {
+                          include: !data.includePendingInForecast,
+                          companyId: selectedCompanyId ?? undefined,
+                        },
+                      });
+                      await refresh(selectedCompanyId ?? undefined);
+                      toast.success(
+                        !data.includePendingInForecast
+                          ? "Attest-fakturor inkluderas nu i prognosen."
+                          : "Attest-fakturor räknas inte längre med.",
+                      );
+                    } catch (err) {
+                      toast.error(
+                        err instanceof Error ? err.message : "Kunde inte uppdatera inställning",
+                      );
+                    }
                   }}
-                />
-              </div>
-              <div className="flex items-center justify-between gap-3 mt-2 text-xs text-muted-foreground">
-                <span>
-                  {formatSEK(forecast.monthlyRevenueProgress.bookedSoFar)} av{" "}
-                  {formatSEK(forecast.monthlyRevenueProgress.target)}
-                </span>
-                <span
-                  className={
-                    forecast.monthlyRevenueProgress.onTrack ? "text-success" : "text-amber-500"
-                  }
                 >
-                  {forecast.monthlyRevenueProgress.onTrack ? "På rätt spår" : "Ligger efter"} —
-                  prognos {formatSEK(forecast.monthlyRevenueProgress.projectedTotal)}
-                </span>
-              </div>
-            </>
-          ) : (
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="font-semibold">Kassaflödesmål</h3>
-                <p className="text-sm text-muted-foreground mt-0.5">
-                  Sätt ett månadsmål för att följa hur intäkterna ligger till.
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setRevenueTargetInput("");
-                  setEditingRevenueTarget(true);
-                }}
-              >
-                Sätt mål
-              </Button>
-            </div>
-          )}
-          {editingRevenueTarget && (
-            <div className="mt-4 flex items-end gap-2 max-w-md">
-              <div className="flex-1">
-                <Label htmlFor="revenueTarget">Månadsmål (SEK)</Label>
-                <Input
-                  id="revenueTarget"
-                  type="number"
-                  placeholder="t.ex. 150000"
-                  value={revenueTargetInput}
-                  onChange={(e) => setRevenueTargetInput(e.target.value)}
-                />
-              </div>
-              <Button onClick={handleSaveRevenueTarget}>Spara</Button>
-              {forecast.monthlyRevenueProgress && (
-                <Button variant="ghost" onClick={handleClearRevenueTarget}>
-                  Ta bort
+                  {data.includePendingInForecast ? "Ta bort från prognos" : "Inkludera i prognos"}
                 </Button>
               )}
             </div>
           )}
-        </section>
 
-        {/* Warning banner */}
-        {hasBreach && (
-          <div
-            key={`warn-${forecast.breachDate}`}
-            className="border border-destructive/40 rounded-xl p-4 animate-in zoom-in-95 fade-in duration-300"
-            style={{ backgroundColor: "color-mix(in oklab, var(--destructive) 8%, transparent)" }}
-          >
-            <div className="flex gap-3 items-start">
-              <AlertTriangle className="size-5 text-destructive shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <div className="font-semibold text-foreground">
-                  Saldot riskerar att gå under din gräns
-                </div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  Den <strong className="text-foreground">{formatDateSv(forecast.breachDate!)}</strong> beräknas saldot vara{" "}
-                  <strong className="text-foreground">{formatSEK(forecast.breachAmount ?? 0)}</strong>, vilket är under din varningsgräns på {formatSEK(forecast.threshold)}.
-                </div>
-              </div>
-            </div>
-            {view.suggestions.length > 0 && (
-              <div className="mt-4 pl-8">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                  Förslag
-                </div>
-                <div className="grid sm:grid-cols-2 gap-2">
-                  {view.suggestions.map((s) => (
-                    <button
-                      key={s.txId + s.kind}
-                      onClick={() => handleSuggestionClick(s)}
-                      className="text-left bg-background hover:bg-secondary border border-border rounded-lg p-3 transition-colors group"
-                    >
-                      <div className="flex items-center gap-2 font-medium text-sm text-foreground">
-                        {s.kind === "remind" ? (
-                          <BellRing className="size-4 text-primary" />
-                        ) : (
-                          <CalendarClock className="size-4 text-primary" />
-                        )}
-                        {s.label}
-                        <span className="ml-auto text-xs text-muted-foreground group-hover:text-foreground">→</span>
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-1">{s.detail}</div>
-                    </button>
-                  ))}
-                </div>
-                <p className="text-[11px] text-muted-foreground/80 mt-3 leading-relaxed">
-                  Pejl ger dig och din redovisningskonsult en gemensam bild av likviditeten framåt – baserat på bokförd data i Fortnox. Ersätter inte bokföring eller rådgivning. Du och din konsult beslutar alltid själv.
-                </p>
-
-              </div>
+          <div className="flex flex-wrap items-center gap-3 -mt-2">
+            {fortnoxConnected ? (
+              <>
+                <span className="inline-flex items-center gap-2 text-sm font-medium text-success bg-success/10 border border-success/30 rounded-full px-3 py-1.5">
+                  <CheckCircle2 className="size-4" /> Fortnox ansluten
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSyncFortnox}
+                  disabled={fortnoxSyncing}
+                >
+                  {fortnoxSyncing ? "Synkar…" : "Synka Fortnox"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDisconnectFortnox}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  Koppla bort
+                </Button>
+              </>
+            ) : fortnoxForm ? (
+              <form
+                action={fortnoxForm.action}
+                method="GET"
+                target="_top"
+                onSubmit={handleConnectFortnox}
+              >
+                {fortnoxForm.params.map(([name, value]) => (
+                  <input key={name} type="hidden" name={name} value={value} />
+                ))}
+                <Button type="submit" variant="default" size="sm">
+                  <Link2 className="size-4" />
+                  Koppla Fortnox
+                </Button>
+              </form>
+            ) : (
+              <Button variant="default" size="sm" disabled>
+                <Link2 className="size-4" />
+                {fortnoxLoading ? "Förbereder Fortnox…" : "Koppla Fortnox"}
+              </Button>
+            )}
+            {tinkStatus?.connected ? (
+              <>
+                <span className="inline-flex items-center gap-2 text-sm font-medium text-success bg-success/10 border border-success/30 rounded-full px-3 py-1.5">
+                  <Landmark className="size-4" /> Bank ansluten
+                </span>
+                <Button variant="outline" size="sm" onClick={handleSyncTink} disabled={tinkSyncing}>
+                  {tinkSyncing ? "Synkar…" : "Synka bank"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDisconnectTink}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  Koppla bort bank
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleConnectTink}
+                disabled={tinkLoading}
+              >
+                <Landmark className="size-4" />
+                {tinkLoading ? "Förbereder bank…" : "Koppla bank"}
+              </Button>
             )}
 
-          </div>
-        )}
-
-        {/* Försenade kundfakturor — bredvid varningsrutan */}
-        {overdueInvoices.length > 0 && (
-          <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
-            <h3 className="font-semibold mb-3">Försenade kundfakturor</h3>
-            <ul className="space-y-3">
-              {overdueInvoices.map((t) => (
-                <li
-                  key={t.id}
-                  className="flex items-center justify-between gap-3 text-sm flex-wrap"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate font-medium text-foreground">{t.description}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {formatSEK(Number(t.amount))} · {t.daysOverdue} dagar försenad
-                    </div>
-                  </div>
-                  {t.reminder_sent_at ? (
-                    <span className="text-xs text-muted-foreground shrink-0">
-                      Påminnelse skickad {formatDateSv(t.reminder_sent_at.slice(0, 10))} — inväntar
-                      svar
-                    </span>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={sendingReminderId === t.id}
-                      onClick={() => handleSendReminder(t.id)}
-                      className="shrink-0"
-                    >
-                      <BellRing className="size-3.5" />
-                      {sendingReminderId === t.id ? "Skickar…" : "Skicka påminnelse"}
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {/* Forecast chart */}
-        <section className="bg-card border border-border rounded-2xl p-4 md:p-6 shadow-sm">
-          <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
-            <div>
-              <h2 className="text-base font-semibold">Prognos 30 dagar framåt</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Bekräftad dag 0–14, indikativ dag 15–30
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" onClick={() => setSimulateOpen(true)}>
-                <FlaskConical className="size-3.5" /> Simulera
-              </Button>
-              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                <span className="flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-0.5 bg-[var(--color-chart-1)]" />
-                  Bekräftad
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span
-                    className="inline-block w-3 h-0.5 opacity-60"
-                    style={{
-                      borderTop: "2px dashed var(--color-chart-1)",
-                      background: "transparent",
-                    }}
-                  />
-                  Indikativ
-                </span>
-                {simulationResult && (
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      className="inline-block w-3 h-0.5"
-                      style={{
-                        borderTop: "2px dashed var(--color-chart-3)",
-                        background: "transparent",
-                      }}
-                    />
-                    Simulering
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {simulationResult && (
-            <div
-              className="mb-4 flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
-              style={{
-                borderColor: "var(--color-chart-3)",
-                backgroundColor: "color-mix(in oklab, var(--color-chart-3) 8%, transparent)",
-              }}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleShare}
+              disabled={shareLoading}
+              className="text-muted-foreground hover:text-foreground"
             >
-              <span className="text-foreground">{simulationResult.summary}</span>
-              <button
-                onClick={() => setSimulationResult(null)}
-                className="text-muted-foreground hover:text-foreground shrink-0"
-                title="Rensa simulering"
-              >
-                <X className="size-3.5" />
-              </button>
+              <Share2 className="size-4" />
+              {shareLoading ? "Skapar länk…" : "Dela med din redovisningskonsult →"}
+            </Button>
+            {shareUrl && (
+              <div className="flex flex-col gap-1">
+                <button
+                  onClick={copyShareUrl}
+                  className="inline-flex items-center gap-2 text-xs bg-secondary border border-border rounded-full px-3 py-1.5 hover:bg-secondary/70 max-w-full"
+                >
+                  {shareCopied ? (
+                    <Check className="size-3.5 text-success shrink-0" />
+                  ) : (
+                    <Copy className="size-3.5 shrink-0" />
+                  )}
+                  <span className="truncate font-mono">{shareUrl}</span>
+                </button>
+                <span className="text-xs text-muted-foreground">Länken är giltig i 30 dagar.</span>
+              </div>
+            )}
+          </div>
+
+          {editingThreshold && (
+            <div className="bg-card border border-border rounded-xl p-4 flex items-end gap-2 max-w-md">
+              <div className="flex-1">
+                <Label htmlFor="threshold">Ny varningsgräns (SEK)</Label>
+                <Input
+                  id="threshold"
+                  type="number"
+                  value={thresholdInput}
+                  onChange={(e) => setThresholdInput(e.target.value)}
+                />
+              </div>
+              <Button onClick={handleSaveThreshold}>Spara</Button>
             </div>
           )}
 
-          <div className="h-64 -mx-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--color-chart-2)" stopOpacity={0.45} />
-                    <stop offset="100%" stopColor="var(--color-chart-2)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
-                  tickLine={false}
-                  axisLine={false}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) => `${Math.round(Number(v) / 1000)}k`}
-                  width={48}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "var(--color-popover)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: 12,
-                    fontSize: 12,
-                  }}
-                  formatter={(value: number, name: string) => [
-                    formatSEK(value),
-                    name === "simulated" ? "Simulerat saldo" : "Saldo",
-                  ]}
-                  labelFormatter={(l) => l}
-                />
-                <ReferenceLine
-                  y={forecast.threshold}
-                  stroke="var(--color-destructive)"
-                  strokeDasharray="4 4"
-                  label={{
-                    value: `Gräns ${formatSEK(forecast.threshold)}`,
-                    position: "insideTopRight",
-                    fill: "var(--color-destructive)",
-                    fontSize: 11,
-                  }}
-                />
-                <ReferenceLine
-                  x={chartData[CONFIRMED_DAYS]?.label}
-                  stroke="var(--color-border)"
-                  strokeDasharray="2 3"
-                  label={{
-                    value: "Baserat på historiska mönster",
-                    position: "insideTopRight",
-                    fill: "var(--color-muted-foreground)",
-                    fontSize: 10,
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="confirmed"
-                  stroke="var(--color-chart-1)"
-                  strokeWidth={2.5}
-                  fill="url(#balanceFill)"
-                  connectNulls={false}
-                  dot={({
-                    key,
-                    ...dotProps
-                  }: {
-                    key?: string;
-                    cx?: number;
-                    cy?: number;
-                    payload?: { hasTaxEvent?: boolean };
-                  }) => <TaxDot key={key} {...dotProps} />}
-                  isAnimationActive
-                  animationDuration={1200}
-                  animationEasing="ease-out"
-                />
-                <Area
-                  type="monotone"
-                  dataKey="indicative"
-                  stroke="var(--color-chart-1)"
-                  strokeOpacity={0.55}
-                  strokeWidth={2}
-                  strokeDasharray="5 4"
-                  fill="url(#balanceFill)"
-                  fillOpacity={0.4}
-                  connectNulls={false}
-                  dot={({
-                    key,
-                    ...dotProps
-                  }: {
-                    key?: string;
-                    cx?: number;
-                    cy?: number;
-                    payload?: { hasTaxEvent?: boolean };
-                  }) => <TaxDot key={key} {...dotProps} />}
-                  isAnimationActive
-                  animationDuration={1200}
-                  animationEasing="ease-out"
-                />
-                {simulationResult && (
-                  <Area
-                    type="monotone"
-                    dataKey="simulated"
-                    stroke="var(--color-chart-3)"
-                    strokeWidth={2}
-                    strokeDasharray="4 3"
-                    fill="transparent"
-                    connectNulls
-                    isAnimationActive
-                    animationDuration={600}
-                  />
-                )}
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
-
-        {/* Kommande skatter & avgifter */}
-        {taxItems.length > 0 && (
-          <section
-            className="rounded-2xl border border-tax/30 p-5 shadow-sm"
-            style={{ backgroundColor: "color-mix(in oklab, var(--tax) 10%, transparent)" }}
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <span className="inline-flex items-center justify-center size-6 rounded-md bg-tax text-tax-foreground font-bold text-sm">§</span>
-              <h3 className="font-semibold text-tax">Kommande skatter & avgifter</h3>
-            </div>
-            <ul className="space-y-2.5">
-              {taxItems.map((t) => (
-                <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium text-foreground">{t.description}</div>
-                    <div className="text-xs text-muted-foreground">Förfaller {formatDateSv(t.due_date)}</div>
-                  </div>
-                  <div className="text-tax font-semibold">−{formatSEK(Number(t.amount))}</div>
-                </li>
-              ))}
-            </ul>
-            {taxBreaches.length > 0 && (
-              <div className="mt-4 space-y-2">
-                {taxBreaches.map(({ tx, balanceAfter }) => (
-                  <div
-                    key={`taxbreach-${tx.id}`}
-                    className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
+          {/* Kassaflödesmål */}
+          <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+            {forecast.monthlyRevenueProgress ? (
+              <>
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h3 className="font-semibold">
+                    Du är på {forecast.monthlyRevenueProgress.percentOfTarget}% av ditt månadsmål
+                    för {formatMonthSv(forecast.monthlyRevenueProgress.month)}
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setRevenueTargetInput(String(forecast.monthlyRevenueProgress!.target));
+                      setEditingRevenueTarget((v) => !v);
+                    }}
+                    className="text-xs text-muted-foreground hover:text-foreground underline shrink-0"
                   >
-                    <AlertTriangle className="size-4 text-destructive shrink-0 mt-0.5" />
-                    <div className="text-foreground">
-                      <strong>OBS:</strong> Skattebetalningen den {formatDateSv(tx.due_date)} riskerar ta saldot under din gräns
-                      {" "}(beräknat saldo {formatSEK(balanceAfter)}, gräns {formatSEK(forecast.threshold)}).
-                    </div>
-                  </div>
-                ))}
+                    Ändra
+                  </button>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-secondary overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${forecast.monthlyRevenueProgress.onTrack ? "bg-success" : "bg-amber-500"}`}
+                    style={{
+                      width: `${Math.min(100, Math.max(0, forecast.monthlyRevenueProgress.percentOfTarget))}%`,
+                    }}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3 mt-2 text-xs text-muted-foreground">
+                  <span>
+                    {formatSEK(forecast.monthlyRevenueProgress.bookedSoFar)} av{" "}
+                    {formatSEK(forecast.monthlyRevenueProgress.target)}
+                  </span>
+                  <span
+                    className={
+                      forecast.monthlyRevenueProgress.onTrack ? "text-success" : "text-amber-500"
+                    }
+                  >
+                    {forecast.monthlyRevenueProgress.onTrack ? "På rätt spår" : "Ligger efter"} —
+                    prognos {formatSEK(forecast.monthlyRevenueProgress.projectedTotal)}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold">Kassaflödesmål</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Sätt ett månadsmål för att följa hur intäkterna ligger till.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setRevenueTargetInput("");
+                    setEditingRevenueTarget(true);
+                  }}
+                >
+                  Sätt mål
+                </Button>
               </div>
             )}
-            <p className="text-[11px] text-muted-foreground/80 mt-3 leading-relaxed">
-              Skatter och avgifter räknas alltid med i prognosen automatiskt – de är den vanligaste orsaken till likviditetskriser.
-            </p>
+            {editingRevenueTarget && (
+              <div className="mt-4 flex items-end gap-2 max-w-md">
+                <div className="flex-1">
+                  <Label htmlFor="revenueTarget">Månadsmål (SEK)</Label>
+                  <Input
+                    id="revenueTarget"
+                    type="number"
+                    placeholder="t.ex. 150000"
+                    value={revenueTargetInput}
+                    onChange={(e) => setRevenueTargetInput(e.target.value)}
+                  />
+                </div>
+                <Button onClick={handleSaveRevenueTarget}>Spara</Button>
+                {forecast.monthlyRevenueProgress && (
+                  <Button variant="ghost" onClick={handleClearRevenueTarget}>
+                    Ta bort
+                  </Button>
+                )}
+              </div>
+            )}
           </section>
-        )}
 
-        {/* Upcoming + Weekly summary */}
-        <section className="grid md:grid-cols-2 gap-4">
-          <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
-            <h3 className="font-semibold mb-3">Kommande poster</h3>
-            <ul className="space-y-2.5">
-              {upcomingUnpaid.length === 0 && (
-                <li className="text-sm text-muted-foreground">Inga obetalda poster.</li>
-              )}
-              {upcomingUnpaid.map((t, i) => {
-                const isTax = t.category === "tax";
-                return (
-                  <li
-                    key={t.id}
-                    style={{ animationDelay: `${i * 50}ms`, animationFillMode: "both" }}
-                    className="flex items-center justify-between gap-3 text-sm animate-in slide-in-from-top-2 fade-in duration-300"
-                  >
-                    <div className="min-w-0 flex items-center gap-2">
-                      {isTax && <Landmark className="size-3.5 text-tax shrink-0" />}
-                      <div className="min-w-0">
-                        <div className={`truncate font-medium ${isTax ? "text-tax" : ""}`}>{t.description}</div>
-                        <div className="text-xs text-muted-foreground">{formatDateSv(t.due_date)}</div>
-                      </div>
-                    </div>
-                    <div className={t.kind === "income" ? "text-success font-medium" : isTax ? "text-tax font-medium" : "text-foreground font-medium"}>
-                      {t.kind === "income" ? "+" : "−"}
-                      {formatSEK(Number(t.amount))}
-                    </div>
-                  </li>
-                );
-              })}
-
-            </ul>
-          </div>
-
-          <div className="bg-card border border-border rounded-2xl p-5 shadow-sm flex flex-col">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">Veckosammanfattning</h3>
-              <Button size="sm" onClick={handleWeeklySummary} disabled={summaryLoading}>
-                <Sparkles className="size-4" />
-                {summaryLoading ? "Skriver…" : summary ? "Skriv ny" : "Generera"}
-              </Button>
-            </div>
-            <div className="text-sm text-foreground/90 leading-relaxed min-h-[8rem]">
-              {summaryLoading && <Shimmer>Sammanfattar din vecka…</Shimmer>}
-              {!summaryLoading && summary && (
-                <div className="prose prose-sm max-w-none">
-                  <ReactMarkdown>{summary}</ReactMarkdown>
+          {/* Warning banner */}
+          {hasBreach && (
+            <div
+              key={`warn-${forecast.breachDate}`}
+              className="border border-destructive/40 rounded-xl p-4 animate-in zoom-in-95 fade-in duration-300"
+              style={{ backgroundColor: "color-mix(in oklab, var(--destructive) 8%, transparent)" }}
+            >
+              <div className="flex gap-3 items-start">
+                <AlertTriangle className="size-5 text-destructive shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="font-semibold text-foreground">
+                    Saldot riskerar att gå under din gräns
+                  </div>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Den{" "}
+                    <strong className="text-foreground">
+                      {formatDateSv(forecast.breachDate!)}
+                    </strong>{" "}
+                    beräknas saldot vara{" "}
+                    <strong className="text-foreground">
+                      {formatSEK(forecast.breachAmount ?? 0)}
+                    </strong>
+                    , vilket är under din varningsgräns på {formatSEK(forecast.threshold)}.
+                  </div>
+                </div>
+              </div>
+              {view.suggestions.length > 0 && (
+                <div className="mt-4 pl-8">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                    Förslag
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    {view.suggestions.map((s) => (
+                      <button
+                        key={s.txId + s.kind}
+                        onClick={() => handleSuggestionClick(s)}
+                        className="text-left bg-background hover:bg-secondary border border-border rounded-lg p-3 transition-colors group"
+                      >
+                        <div className="flex items-center gap-2 font-medium text-sm text-foreground">
+                          {s.kind === "remind" ? (
+                            <BellRing className="size-4 text-primary" />
+                          ) : (
+                            <CalendarClock className="size-4 text-primary" />
+                          )}
+                          {s.label}
+                          <span className="ml-auto text-xs text-muted-foreground group-hover:text-foreground">
+                            →
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">{s.detail}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground/80 mt-3 leading-relaxed">
+                    Pejl ger dig och din redovisningskonsult en gemensam bild av likviditeten framåt
+                    – baserat på bokförd data i Fortnox. Ersätter inte bokföring eller rådgivning.
+                    Du och din konsult beslutar alltid själv.
+                  </p>
                 </div>
               )}
-              {!summaryLoading && !summary && (
-                <p className="text-muted-foreground text-sm">
-                  Få en kort text om hur det ser ut just nu och varningar för kommande 30 dagar.
-                </p>
-              )}
             </div>
-          </div>
-        </section>
+          )}
 
-        {/* Chat */}
-        <section className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-border">
-            <h3 className="font-semibold">Fråga Pejl</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">T.ex. "vilka fakturor är obetalda?" eller "hur går det ekonomiskt?"</p>
+          {/* Försenade kundfakturor — bredvid varningsrutan */}
+          {overdueInvoices.length > 0 && (
+            <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+              <h3 className="font-semibold mb-3">Försenade kundfakturor</h3>
+              <ul className="space-y-3">
+                {overdueInvoices.map((t) => (
+                  <li
+                    key={t.id}
+                    className="flex items-center justify-between gap-3 text-sm flex-wrap"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-foreground">{t.description}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {formatSEK(Number(t.amount))} · {t.daysOverdue} dagar försenad
+                      </div>
+                    </div>
+                    {t.reminder_sent_at ? (
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        Påminnelse skickad {formatDateSv(t.reminder_sent_at.slice(0, 10))} —
+                        inväntar svar
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={sendingReminderId === t.id}
+                        onClick={() => handleSendReminder(t.id)}
+                        className="shrink-0"
+                      >
+                        <BellRing className="size-3.5" />
+                        {sendingReminderId === t.id ? "Skickar…" : "Skicka påminnelse"}
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {/* Forecast chart */}
+          <section className="bg-card border border-border rounded-2xl p-4 md:p-6 shadow-sm">
+            <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
+              <div>
+                <h2 className="text-base font-semibold">Prognos 30 dagar framåt</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Bekräftad dag 0–14, indikativ dag 15–30
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button variant="outline" size="sm" onClick={() => setSimulateOpen(true)}>
+                  <FlaskConical className="size-3.5" /> Simulera
+                </Button>
+                <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-3 h-0.5 bg-[var(--color-chart-1)]" />
+                    Bekräftad
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span
+                      className="inline-block w-3 h-0.5 opacity-60"
+                      style={{
+                        borderTop: "2px dashed var(--color-chart-1)",
+                        background: "transparent",
+                      }}
+                    />
+                    Indikativ
+                  </span>
+                  {simulationResult && (
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className="inline-block w-3 h-0.5"
+                        style={{
+                          borderTop: "2px dashed var(--color-chart-3)",
+                          background: "transparent",
+                        }}
+                      />
+                      Simulering
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {simulationResult && (
+              <div
+                className="mb-4 flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
+                style={{
+                  borderColor: "var(--color-chart-3)",
+                  backgroundColor: "color-mix(in oklab, var(--color-chart-3) 8%, transparent)",
+                }}
+              >
+                <span className="text-foreground">{simulationResult.summary}</span>
+                <button
+                  onClick={() => setSimulationResult(null)}
+                  className="text-muted-foreground hover:text-foreground shrink-0"
+                  title="Rensa simulering"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            )}
+
+            <div className="h-64 -mx-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="var(--color-chart-2)" stopOpacity={0.45} />
+                      <stop offset="100%" stopColor="var(--color-chart-2)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="var(--color-border)"
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                    tickLine={false}
+                    axisLine={false}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v) => `${Math.round(Number(v) / 1000)}k`}
+                    width={48}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--color-popover)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: 12,
+                      fontSize: 12,
+                    }}
+                    formatter={(value: number, name: string) => [
+                      formatSEK(value),
+                      name === "simulated" ? "Simulerat saldo" : "Saldo",
+                    ]}
+                    labelFormatter={(l) => l}
+                  />
+                  <ReferenceLine
+                    y={forecast.threshold}
+                    stroke="var(--color-destructive)"
+                    strokeDasharray="4 4"
+                    label={{
+                      value: `Gräns ${formatSEK(forecast.threshold)}`,
+                      position: "insideTopRight",
+                      fill: "var(--color-destructive)",
+                      fontSize: 11,
+                    }}
+                  />
+                  <ReferenceLine
+                    x={chartData[CONFIRMED_DAYS]?.label}
+                    stroke="var(--color-border)"
+                    strokeDasharray="2 3"
+                    label={{
+                      value: "Baserat på historiska mönster",
+                      position: "insideTopRight",
+                      fill: "var(--color-muted-foreground)",
+                      fontSize: 10,
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="confirmed"
+                    stroke="var(--color-chart-1)"
+                    strokeWidth={2.5}
+                    fill="url(#balanceFill)"
+                    connectNulls={false}
+                    dot={({
+                      key,
+                      ...dotProps
+                    }: {
+                      key?: string;
+                      cx?: number;
+                      cy?: number;
+                      payload?: { hasTaxEvent?: boolean };
+                    }) => <TaxDot key={key} {...dotProps} />}
+                    isAnimationActive
+                    animationDuration={1200}
+                    animationEasing="ease-out"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="indicative"
+                    stroke="var(--color-chart-1)"
+                    strokeOpacity={0.55}
+                    strokeWidth={2}
+                    strokeDasharray="5 4"
+                    fill="url(#balanceFill)"
+                    fillOpacity={0.4}
+                    connectNulls={false}
+                    dot={({
+                      key,
+                      ...dotProps
+                    }: {
+                      key?: string;
+                      cx?: number;
+                      cy?: number;
+                      payload?: { hasTaxEvent?: boolean };
+                    }) => <TaxDot key={key} {...dotProps} />}
+                    isAnimationActive
+                    animationDuration={1200}
+                    animationEasing="ease-out"
+                  />
+                  {simulationResult && (
+                    <Area
+                      type="monotone"
+                      dataKey="simulated"
+                      stroke="var(--color-chart-3)"
+                      strokeWidth={2}
+                      strokeDasharray="4 3"
+                      fill="transparent"
+                      connectNulls
+                      isAnimationActive
+                      animationDuration={600}
+                    />
+                  )}
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          {/* Kommande skatter & avgifter */}
+          {taxItems.length > 0 && (
+            <section
+              className="rounded-2xl border border-tax/30 p-5 shadow-sm"
+              style={{ backgroundColor: "color-mix(in oklab, var(--tax) 10%, transparent)" }}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <span className="inline-flex items-center justify-center size-6 rounded-md bg-tax text-tax-foreground font-bold text-sm">
+                  §
+                </span>
+                <h3 className="font-semibold text-tax">Kommande skatter & avgifter</h3>
+              </div>
+              <ul className="space-y-2.5">
+                {taxItems.map((t) => (
+                  <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-foreground">{t.description}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Förfaller {formatDateSv(t.due_date)}
+                      </div>
+                    </div>
+                    <div className="text-tax font-semibold">−{formatSEK(Number(t.amount))}</div>
+                  </li>
+                ))}
+              </ul>
+              {taxBreaches.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {taxBreaches.map(({ tx, balanceAfter }) => (
+                    <div
+                      key={`taxbreach-${tx.id}`}
+                      className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
+                    >
+                      <AlertTriangle className="size-4 text-destructive shrink-0 mt-0.5" />
+                      <div className="text-foreground">
+                        <strong>OBS:</strong> Skattebetalningen den {formatDateSv(tx.due_date)}{" "}
+                        riskerar ta saldot under din gräns (beräknat saldo {formatSEK(balanceAfter)}
+                        , gräns {formatSEK(forecast.threshold)}).
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground/80 mt-3 leading-relaxed">
+                Skatter och avgifter räknas alltid med i prognosen automatiskt – de är den
+                vanligaste orsaken till likviditetskriser.
+              </p>
+            </section>
+          )}
+
+          {/* Upcoming + Weekly summary */}
+          <section className="grid md:grid-cols-2 gap-4">
+            <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+              <h3 className="font-semibold mb-3">Kommande poster</h3>
+              <ul className="space-y-2.5">
+                {upcomingUnpaid.length === 0 && (
+                  <li className="text-sm text-muted-foreground">Inga obetalda poster.</li>
+                )}
+                {upcomingUnpaid.map((t, i) => {
+                  const isTax = t.category === "tax";
+                  return (
+                    <li
+                      key={t.id}
+                      style={{ animationDelay: `${i * 50}ms`, animationFillMode: "both" }}
+                      className="flex items-center justify-between gap-3 text-sm animate-in slide-in-from-top-2 fade-in duration-300"
+                    >
+                      <div className="min-w-0 flex items-center gap-2">
+                        {isTax && <Landmark className="size-3.5 text-tax shrink-0" />}
+                        <div className="min-w-0">
+                          <div className={`truncate font-medium ${isTax ? "text-tax" : ""}`}>
+                            {t.description}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {formatDateSv(t.due_date)}
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        className={
+                          t.kind === "income"
+                            ? "text-success font-medium"
+                            : isTax
+                              ? "text-tax font-medium"
+                              : "text-foreground font-medium"
+                        }
+                      >
+                        {t.kind === "income" ? "+" : "−"}
+                        {formatSEK(Number(t.amount))}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            <div className="bg-card border border-border rounded-2xl p-5 shadow-sm flex flex-col">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold">Veckosammanfattning</h3>
+                <Button size="sm" onClick={handleWeeklySummary} disabled={summaryLoading}>
+                  <Sparkles className="size-4" />
+                  {summaryLoading ? "Skriver…" : summary ? "Skriv ny" : "Generera"}
+                </Button>
+              </div>
+              <div className="text-sm text-foreground/90 leading-relaxed min-h-[8rem]">
+                {summaryLoading && <Shimmer>Sammanfattar din vecka…</Shimmer>}
+                {!summaryLoading && summary && (
+                  <div className="prose prose-sm max-w-none">
+                    <ReactMarkdown>{summary}</ReactMarkdown>
+                  </div>
+                )}
+                {!summaryLoading && !summary && (
+                  <p className="text-muted-foreground text-sm">
+                    Få en kort text om hur det ser ut just nu och varningar för kommande 30 dagar.
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Chat */}
+          <section className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-border">
+              <h3 className="font-semibold">Fråga Pejl</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                T.ex. "vilka fakturor är obetalda?" eller "hur går det ekonomiskt?"
+              </p>
+            </div>
+            <ChatPanel
+              greeting={chatGreeting}
+              suggestions={aiSuggestions}
+              injectRef={chatInjectRef}
+              companyId={selectedCompanyId}
+            />
+          </section>
+        </main>
+      )}
+
+      {addingCompany && (
+        <div
+          className="fixed inset-0 z-50 bg-background/80 backdrop-blur flex items-center justify-center p-4"
+          onClick={() => setAddingCompany(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl border border-border bg-card p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h3 className="font-semibold">Anslut ytterligare bolag</h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                Du skickas till Fortnox för att logga in på det andra bolagets konto. Ett nytt bolag
+                skapas i Pejl så snart kopplingen är klar.
+              </p>
+            </div>
+            {addCompanyForm ? (
+              <form
+                action={addCompanyForm.action}
+                method="GET"
+                target="_top"
+                className="flex justify-end gap-2"
+              >
+                {addCompanyForm.params.map(([name, value]) => (
+                  <input key={name} type="hidden" name={name} value={value} />
+                ))}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setAddingCompany(false)}
+                >
+                  Avbryt
+                </Button>
+                <Button type="submit" size="sm">
+                  <Link2 className="size-4" /> Fortsätt till Fortnox
+                </Button>
+              </form>
+            ) : (
+              <div className="text-sm text-muted-foreground">Förbereder koppling…</div>
+            )}
           </div>
-          <ChatPanel
-            greeting={chatGreeting}
-            suggestions={aiSuggestions}
-            injectRef={chatInjectRef}
-          />
-        </section>
-      </main>
+        </div>
+      )}
 
       {simulateOpen && (
         <div
@@ -1462,6 +1761,159 @@ function DashboardPage() {
   );
 }
 
+/**
+ * Konsoliderad vy — summerad kassaflödesprognos över ALLA aktiva bolag.
+ * Enklare punktform (date/balance, ingen events/confidence) än
+ * huvudgrafen — se kommentaren på getConsolidatedDashboardData. Antar att
+ * alla bolag har samma valuta; en summa över blandade valutor skulle inte
+ * vara meningsfull, men det är ett känt undantag som inte hanteras här.
+ */
+function ConsolidatedMain({
+  data,
+  loading,
+}: {
+  data: Awaited<ReturnType<typeof getConsolidatedDashboardData>> | null;
+  loading: boolean;
+}) {
+  if (loading || !data) {
+    return (
+      <main className="max-w-5xl mx-auto px-4 pt-6 space-y-6">
+        <div className="text-sm text-muted-foreground">Hämtar konsoliderad vy…</div>
+      </main>
+    );
+  }
+
+  const chartData = data.points.map((p) => ({ ...p, label: formatDateSv(p.date) }));
+  const hasBreach = !!data.totalBreachDate;
+
+  return (
+    <main className="max-w-5xl mx-auto px-4 pt-6 space-y-6">
+      <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KpiCard
+          icon={<Wallet className="size-4" />}
+          label="Totalt saldo idag"
+          value={formatSEK(data.totalStartBalance)}
+        />
+        <KpiCard
+          icon={<TrendingDown className="size-4" />}
+          label="Lägsta saldo (summerat)"
+          value={formatSEK(data.totalMinBalance)}
+          sub={data.totalMinDate ? formatDateSv(data.totalMinDate) : undefined}
+        />
+        <KpiCard
+          icon={<AlertTriangle className="size-4" />}
+          label="Summerad varningsgräns"
+          value={formatSEK(data.totalThreshold)}
+        />
+        <KpiCard
+          icon={<Layers className="size-4" />}
+          label="Antal bolag"
+          value={String(data.perCompany.length)}
+        />
+      </section>
+
+      {hasBreach && (
+        <div
+          className="border border-destructive/40 rounded-xl p-4 flex gap-3 items-start"
+          style={{ backgroundColor: "color-mix(in oklab, var(--destructive) 8%, transparent)" }}
+        >
+          <AlertTriangle className="size-5 text-destructive shrink-0 mt-0.5" />
+          <div className="text-sm text-foreground">
+            Det summerade saldot över alla bolag riskerar gå under den summerade varningsgränsen{" "}
+            {formatSEK(data.totalThreshold)} den {formatDateSv(data.totalBreachDate!)}.
+          </div>
+        </div>
+      )}
+
+      <section className="bg-card border border-border rounded-2xl p-4 md:p-6 shadow-sm">
+        <h2 className="text-base font-semibold mb-4">Summerad kassaflödesprognos, 30 dagar</h2>
+        <div className="h-64 -mx-2">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="consolidatedFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--color-chart-2)" stopOpacity={0.45} />
+                  <stop offset="100%" stopColor="var(--color-chart-2)" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+              <XAxis
+                dataKey="label"
+                tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                tickLine={false}
+                axisLine={false}
+                interval="preserveStartEnd"
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(v) => `${Math.round(Number(v) / 1000)}k`}
+                width={48}
+              />
+              <Tooltip
+                contentStyle={{
+                  background: "var(--color-popover)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: 12,
+                  fontSize: 12,
+                }}
+                formatter={(value: number) => [formatSEK(value), "Summerat saldo"]}
+                labelFormatter={(l) => l}
+              />
+              <ReferenceLine
+                y={data.totalThreshold}
+                stroke="var(--color-destructive)"
+                strokeDasharray="4 4"
+                label={{
+                  value: `Gräns ${formatSEK(data.totalThreshold)}`,
+                  position: "insideTopRight",
+                  fill: "var(--color-destructive)",
+                  fontSize: 11,
+                }}
+              />
+              <Area
+                type="monotone"
+                dataKey="balance"
+                stroke="var(--color-chart-1)"
+                strokeWidth={2.5}
+                fill="url(#consolidatedFill)"
+                isAnimationActive
+                animationDuration={1000}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+
+      <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+        <h3 className="font-semibold mb-3">Per bolag</h3>
+        <ul className="space-y-3">
+          {data.perCompany.map((c) => (
+            <li key={c.companyId} className="flex items-center justify-between gap-3 text-sm">
+              <div className="min-w-0">
+                <div className="truncate font-medium text-foreground">{c.companyName}</div>
+                <div className="text-xs text-muted-foreground">
+                  Lägsta saldo {formatSEK(c.minBalance)} ({formatDateSv(c.minDate)})
+                  {c.breachDate && (
+                    <span className="text-destructive">
+                      {" "}
+                      · under gräns {formatDateSv(c.breachDate)}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="font-medium text-foreground shrink-0">
+                {formatSEK(c.currentBalance)}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </main>
+  );
+}
+
 function CountUp({ value, duration = 800 }: { value: number; duration?: number }) {
   const [n, setN] = useState(0);
   useEffect(() => {
@@ -1481,7 +1933,6 @@ function CountUp({ value, duration = 800 }: { value: number; duration?: number }
   return <>{formatSEK(Math.round(n))}</>;
 }
 
-
 function KpiCard({
   icon,
   label,
@@ -1498,7 +1949,9 @@ function KpiCard({
   return (
     <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
       <div className="flex items-center justify-between text-muted-foreground text-xs">
-        <span className="flex items-center gap-1.5">{icon} {label}</span>
+        <span className="flex items-center gap-1.5">
+          {icon} {label}
+        </span>
         {action}
       </div>
       <div className="mt-2 text-xl font-semibold tracking-tight">{value}</div>
@@ -1547,10 +2000,12 @@ function ChatPanel({
   greeting,
   suggestions,
   injectRef,
+  companyId,
 }: {
   greeting: string | null;
   suggestions: string[];
   injectRef: React.MutableRefObject<((text: string) => void) | null>;
+  companyId: string | null;
 }) {
   const [token, setToken] = useState<string | null>(null);
   const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
@@ -1572,14 +2027,13 @@ function ChatPanel({
         .select("*")
         .eq("user_id", userId)
         .order("created_at", { ascending: true });
-      const msgs: UIMessage[] =
-        (rows ?? [])
-          .filter((r) => r.role === "user" || r.role === "assistant")
-          .map((r) => ({
-            id: r.id,
-            role: r.role as "user" | "assistant",
-            parts: [{ type: "text", text: r.content }],
-          }));
+      const msgs: UIMessage[] = (rows ?? [])
+        .filter((r) => r.role === "user" || r.role === "assistant")
+        .map((r) => ({
+          id: r.id,
+          role: r.role as "user" | "assistant",
+          parts: [{ type: "text", text: r.content }],
+        }));
       msgs.forEach((m) => persistedIds.current.add(m.id));
 
       // Proaktiv hälsning om varning finns och det inte redan finns en pågående konversation
@@ -1602,8 +2056,9 @@ function ChatPanel({
     return new DefaultChatTransport({
       api: "/api/chat",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: { companyId: companyId ?? undefined },
     });
-  }, [token]);
+  }, [token, companyId]);
 
   if (!transport || !initialMessages) {
     return <div className="p-6 text-sm text-muted-foreground">Laddar samtal…</div>;
@@ -1647,10 +2102,7 @@ function ChatInner({
     injectRef.current = (text: string) => {
       const id = `local-inject-${Date.now()}`;
       persistedIds.current.add(id);
-      setMessages((prev) => [
-        ...prev,
-        { id, role: "assistant", parts: [{ type: "text", text }] },
-      ]);
+      setMessages((prev) => [...prev, { id, role: "assistant", parts: [{ type: "text", text }] }]);
     };
     return () => {
       injectRef.current = null;

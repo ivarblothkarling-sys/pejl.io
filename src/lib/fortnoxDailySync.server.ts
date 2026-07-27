@@ -1,6 +1,6 @@
-// Server-only: kör daglig Fortnox-synk för alla kopplingar med ett giltigt
-// (icke utgånget) token. Anropas från Cloudflare Workers scheduled-hanteraren
-// i src/server.ts — se wrangler.toml för cron-schemat.
+// Server-only: kör daglig Fortnox-synk för alla BOLAG (user_companies) med en
+// koppling med ett giltigt (icke utgånget) token. Anropas från Cloudflare
+// Workers scheduled-hanteraren i src/server.ts — se wrangler.toml för cron-schemat.
 import { computeForecast, formatSEK, type Tx } from "@/lib/forecast";
 import { computeTaxEvents } from "@/lib/tax";
 
@@ -19,7 +19,7 @@ const TAX_REMINDER_WINDOW_DAYS = Math.max(...TAX_REMINDER_DAYS_BEFORE);
  * PAYMENT_OVERDUE_DEDUP_DAYS dagarna (kollas via notifications.related_id,
  * inte body-text).
  */
-async function checkOverdueInvoicesForUser(userId: string) {
+async function checkOverdueInvoicesForCompany(companyId: string, userId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const now = new Date();
   const todayUtcMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
@@ -28,7 +28,7 @@ async function checkOverdueInvoicesForUser(userId: string) {
   const { data: overdueRows, error } = await supabaseAdmin
     .from("transactions")
     .select("id, amount, due_date, description")
-    .eq("user_id", userId)
+    .eq("company_id", companyId)
     .eq("kind", "income")
     .is("paid_at", null)
     .lt("due_date", todayIso);
@@ -64,7 +64,7 @@ async function checkOverdueInvoicesForUser(userId: string) {
       });
     } catch (txErr) {
       console.error(
-        `[fortnoxDailySync] Kunde inte hantera försenad faktura ${tx.id} för ${userId}:`,
+        `[fortnoxDailySync] Kunde inte hantera försenad faktura ${tx.id} för bolag ${companyId}:`,
         txErr,
       );
     }
@@ -80,23 +80,20 @@ async function checkOverdueInvoicesForUser(userId: string) {
  * för samma händelse blockera varandra, eller samma påminnelse skickas om
  * varje dag fram till förfall.
  */
-async function checkTaxReminderForUser(userId: string) {
+async function checkTaxReminderForCompany(
+  companyId: string,
+  userId: string,
+  company: { company_name: string; country: string; vat_period: string },
+) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data: profile, error: profileErr } = await supabaseAdmin
-    .from("profiles")
-    .select("company_name, country, vat_period")
-    .eq("id", userId)
-    .maybeSingle();
-  if (profileErr) throw new Error(profileErr.message);
-  if (!profile) return;
 
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
   const taxEvents = computeTaxEvents(
-    (profile.country ?? "SE") as "SE" | "NO" | "GB" | "US",
+    (company.country ?? "SE") as "SE" | "NO" | "GB" | "US",
     today,
     TAX_REMINDER_WINDOW_DAYS,
-    (profile.vat_period ?? "monthly") as "monthly" | "quarterly" | "yearly",
+    (company.vat_period ?? "monthly") as "monthly" | "quarterly" | "yearly",
   );
   if (taxEvents.length === 0) return;
 
@@ -108,7 +105,7 @@ async function checkTaxReminderForUser(userId: string) {
     );
     if (!TAX_REMINDER_DAYS_BEFORE.includes(daysUntilDue as 7 | 2)) continue;
 
-    const relatedId = `${tx.id}:${daysUntilDue}`;
+    const relatedId = `${companyId}:${tx.id}:${daysUntilDue}`;
     try {
       const { data: existing, error: existingErr } = await supabaseAdmin
         .from("notifications")
@@ -125,7 +122,7 @@ async function checkTaxReminderForUser(userId: string) {
         userId,
         type: "tax_reminder",
         title: `${tx.description} förfaller om ${daysUntilDue} dagar`,
-        body: `${tx.description}${tx.amount > 0 ? ` på ${formatSEK(tx.amount)}` : ""} förfaller ${tx.due_date}.`,
+        body: `${company.company_name}: ${tx.description}${tx.amount > 0 ? ` på ${formatSEK(tx.amount)}` : ""} förfaller ${tx.due_date}.`,
         relatedId,
       });
 
@@ -135,7 +132,7 @@ async function checkTaxReminderForUser(userId: string) {
         const { sendTaxReminderEmail } = await import("@/lib/emailAlert.server");
         const result = await sendTaxReminderEmail({
           to: email,
-          companyName: profile.company_name ?? "ditt företag",
+          companyName: company.company_name ?? "ditt företag",
           label: tx.description,
           amount: tx.amount,
           dueDate: tx.due_date,
@@ -143,54 +140,56 @@ async function checkTaxReminderForUser(userId: string) {
         });
         if (!result.ok) {
           console.error(
-            `[fortnoxDailySync] Kunde inte skicka skattepåminnelse-mejl till ${userId}:`,
+            `[fortnoxDailySync] Kunde inte skicka skattepåminnelse-mejl för bolag ${companyId}:`,
             result.error,
           );
         }
       }
     } catch (taxErr) {
-      console.error(
-        `[fortnoxDailySync] Kunde inte hantera skattepåminnelse ${relatedId} för ${userId}:`,
-        taxErr,
-      );
+      console.error(`[fortnoxDailySync] Kunde inte hantera skattepåminnelse ${relatedId}:`, taxErr);
     }
   }
 }
 
 /**
  * Efter en lyckad synk: varna användare som inte varit inne i appen på minst
- * 24 timmar OCH vars 7-dagarsprognos dyker under varningsgränsen — annars
- * märker de det aldrig förrän de själva loggar in. Fristående try/catch per
- * user i anropspunkten så att ett fel här aldrig påverkar synkens egna
- * succeeded/failed-räknare.
+ * 24 timmar OCH vars 7-dagarsprognos (för DET HÄR bolaget) dyker under
+ * varningsgränsen — annars märker de det aldrig förrän de själva loggar in.
+ * Fristående try/catch per bolag i anropspunkten så att ett fel här aldrig
+ * påverkar synkens egna succeeded/failed-räknare.
  */
-async function checkLowBalanceReminderForUser(userId: string) {
+async function checkLowBalanceReminderForCompany(
+  companyId: string,
+  userId: string,
+  company: {
+    company_name: string;
+    current_balance: number;
+    threshold: number;
+    country: string;
+    vat_period: string;
+  },
+  lastLoginAt: string | null,
+) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const [{ data: profile, error: profileErr }, { data: txRows, error: txErr }] = await Promise.all([
-    supabaseAdmin
-      .from("profiles")
-      .select("current_balance, threshold, company_name, last_login_at, country, vat_period")
-      .eq("id", userId)
-      .maybeSingle(),
-    supabaseAdmin.from("transactions").select("*").eq("user_id", userId),
-  ]);
-  if (profileErr) throw new Error(profileErr.message);
-  if (txErr) throw new Error(txErr.message);
-  if (!profile) return;
 
-  const lastLoginMs = profile.last_login_at ? new Date(profile.last_login_at).getTime() : null;
+  const lastLoginMs = lastLoginAt ? new Date(lastLoginAt).getTime() : null;
   const isInactive = lastLoginMs === null || Date.now() - lastLoginMs > INACTIVITY_THRESHOLD_MS;
   if (!isInactive) return;
 
+  const { data: txRows, error: txErr } = await supabaseAdmin
+    .from("transactions")
+    .select("*")
+    .eq("company_id", companyId);
+  if (txErr) throw new Error(txErr.message);
+
   const forecast = computeForecast(
-    Number(profile.current_balance) || 0,
-    Number(profile.threshold) || 0,
+    Number(company.current_balance) || 0,
+    Number(company.threshold) || 0,
     (txRows ?? []) as Tx[],
     LOW_BALANCE_REMINDER_DAYS,
     new Date(),
-    ((profile as { country?: string }).country ?? "SE") as "SE" | "NO" | "GB" | "US",
-    ((profile as { vat_period?: string }).vat_period ?? "monthly") as
-      "monthly" | "quarterly" | "yearly",
+    (company.country ?? "SE") as "SE" | "NO" | "GB" | "US",
+    (company.vat_period ?? "monthly") as "monthly" | "quarterly" | "yearly",
   );
   if (forecast.minBalance >= forecast.threshold) return;
 
@@ -208,11 +207,11 @@ async function checkLowBalanceReminderForUser(userId: string) {
       userId,
       type: "forecast_warning",
       title: `Kassan kan bli tight om ${days} dagar`,
-      body: `Beräknat saldo når ${formatSEK(forecast.minBalance)} den ${forecast.minDate}.`,
+      body: `${company.company_name}: beräknat saldo når ${formatSEK(forecast.minBalance)} den ${forecast.minDate}.`,
     });
   } catch (notifErr) {
     console.error(
-      `[fortnoxDailySync] Kunde inte skapa kassavarnings-notis för ${userId}:`,
+      `[fortnoxDailySync] Kunde inte skapa kassavarnings-notis för bolag ${companyId}:`,
       notifErr,
     );
   }
@@ -224,14 +223,14 @@ async function checkLowBalanceReminderForUser(userId: string) {
   const { sendLowBalanceReminderEmail } = await import("@/lib/emailAlert.server");
   const result = await sendLowBalanceReminderEmail({
     to: email,
-    companyName: profile.company_name ?? "ditt företag",
+    companyName: company.company_name ?? "ditt företag",
     days,
     minBalance: forecast.minBalance,
     minDate: forecast.minDate,
   });
   if (!result.ok) {
     console.error(
-      `[fortnoxDailySync] Kunde inte skicka kassavarnings-mejl till ${userId}:`,
+      `[fortnoxDailySync] Kunde inte skicka kassavarnings-mejl för bolag ${companyId}:`,
       result.error,
     );
   }
@@ -239,12 +238,12 @@ async function checkLowBalanceReminderForUser(userId: string) {
 
 export async function runDailyFortnoxSync() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { syncFortnoxForUser } = await import("@/lib/api/fortnox.functions");
+  const { syncFortnoxForCompany } = await import("@/lib/api/fortnox.functions");
   const { sendFortnoxSyncFailedEmail } = await import("@/lib/emailAlert.server");
 
   const { data: connections, error } = await supabaseAdmin
     .from("fortnox_connections")
-    .select("user_id, consecutive_sync_failures")
+    .select("user_id, company_id, consecutive_sync_failures")
     .gt("expires_at", new Date().toISOString());
   if (error) {
     console.error("[fortnoxDailySync] Kunde inte hämta fortnox_connections:", error.message);
@@ -255,8 +254,11 @@ export async function runDailyFortnoxSync() {
   let failed = 0;
 
   for (const conn of connections ?? []) {
+    const companyId = conn.company_id;
+    if (!companyId) continue; // koppling utan bolag borde inte förekomma efter migrationen
+
     try {
-      await syncFortnoxForUser(conn.user_id);
+      await syncFortnoxForCompany(companyId);
       succeeded += 1;
       await supabaseAdmin
         .from("fortnox_connections")
@@ -265,28 +267,42 @@ export async function runDailyFortnoxSync() {
           last_sync_at: new Date().toISOString(),
           last_sync_error: null,
         })
-        .eq("user_id", conn.user_id);
+        .eq("company_id", companyId);
+
+      const [{ data: company }, { data: profile }] = await Promise.all([
+        supabaseAdmin.from("user_companies").select("*").eq("id", companyId).maybeSingle(),
+        supabaseAdmin.from("profiles").select("last_login_at").eq("id", conn.user_id).maybeSingle(),
+      ]);
+      if (!company) continue;
 
       try {
-        await checkLowBalanceReminderForUser(conn.user_id);
+        await checkLowBalanceReminderForCompany(
+          companyId,
+          conn.user_id,
+          company,
+          profile?.last_login_at ?? null,
+        );
       } catch (warnErr) {
-        console.error(`[fortnoxDailySync] Kassavarning misslyckades för ${conn.user_id}:`, warnErr);
+        console.error(
+          `[fortnoxDailySync] Kassavarning misslyckades för bolag ${companyId}:`,
+          warnErr,
+        );
       }
 
       try {
-        await checkOverdueInvoicesForUser(conn.user_id);
+        await checkOverdueInvoicesForCompany(companyId, conn.user_id);
       } catch (overdueErr) {
         console.error(
-          `[fortnoxDailySync] Försenad-faktura-koll misslyckades för ${conn.user_id}:`,
+          `[fortnoxDailySync] Försenad-faktura-koll misslyckades för bolag ${companyId}:`,
           overdueErr,
         );
       }
 
       try {
-        await checkTaxReminderForUser(conn.user_id);
+        await checkTaxReminderForCompany(companyId, conn.user_id, company);
       } catch (taxErr) {
         console.error(
-          `[fortnoxDailySync] Skattepåminnelse-koll misslyckades för ${conn.user_id}:`,
+          `[fortnoxDailySync] Skattepåminnelse-koll misslyckades för bolag ${companyId}:`,
           taxErr,
         );
       }
@@ -295,7 +311,7 @@ export async function runDailyFortnoxSync() {
       const message = err instanceof Error ? err.message : String(err);
       const failures = (conn.consecutive_sync_failures ?? 0) + 1;
       console.error(
-        `[fortnoxDailySync] Sync misslyckades för ${conn.user_id} (försök ${failures} i rad):`,
+        `[fortnoxDailySync] Sync misslyckades för bolag ${companyId} (försök ${failures} i rad):`,
         message,
       );
 
@@ -306,7 +322,7 @@ export async function runDailyFortnoxSync() {
           last_sync_at: new Date().toISOString(),
           last_sync_error: message,
         })
-        .eq("user_id", conn.user_id);
+        .eq("company_id", companyId);
 
       if (failures === CONSECUTIVE_FAILURE_THRESHOLD) {
         try {
@@ -318,29 +334,32 @@ export async function runDailyFortnoxSync() {
             body: message,
           });
         } catch (notifErr) {
-          console.error(`[fortnoxDailySync] Kunde inte skapa notis för ${conn.user_id}:`, notifErr);
+          console.error(
+            `[fortnoxDailySync] Kunde inte skapa notis för bolag ${companyId}:`,
+            notifErr,
+          );
         }
 
         try {
-          const [{ data: userRes }, { data: profile }] = await Promise.all([
+          const [{ data: userRes }, { data: company }] = await Promise.all([
             supabaseAdmin.auth.admin.getUserById(conn.user_id),
             supabaseAdmin
-              .from("profiles")
+              .from("user_companies")
               .select("company_name")
-              .eq("id", conn.user_id)
+              .eq("id", companyId)
               .maybeSingle(),
           ]);
           const email = userRes.user?.email;
           if (email) {
             await sendFortnoxSyncFailedEmail({
               to: email,
-              companyName: profile?.company_name ?? "ditt företag",
+              companyName: company?.company_name ?? "ditt företag",
               failureReason: message,
             });
           }
         } catch (emailErr) {
           console.error(
-            `[fortnoxDailySync] Kunde inte skicka felmejl till ${conn.user_id}:`,
+            `[fortnoxDailySync] Kunde inte skicka felmejl för bolag ${companyId}:`,
             emailErr,
           );
         }

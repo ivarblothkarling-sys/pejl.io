@@ -116,6 +116,7 @@ export type Database = {
       fortnox_connections: {
         Row: {
           access_token: string
+          company_id: string | null
           consecutive_sync_failures: number
           created_at: string
           expires_at: string | null
@@ -129,6 +130,7 @@ export type Database = {
         }
         Insert: {
           access_token: string
+          company_id?: string | null
           consecutive_sync_failures?: number
           created_at?: string
           expires_at?: string | null
@@ -142,6 +144,7 @@ export type Database = {
         }
         Update: {
           access_token?: string
+          company_id?: string | null
           consecutive_sync_failures?: number
           created_at?: string
           expires_at?: string | null
@@ -153,7 +156,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fortnox_connections_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "user_companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       notifications: {
         Row: {
@@ -348,6 +359,7 @@ export type Database = {
         Row: {
           amount: number
           approval_status: string
+          company_id: string | null
           created_at: string
           description: string
           due_date: string
@@ -363,6 +375,7 @@ export type Database = {
         Insert: {
           amount: number
           approval_status?: string
+          company_id?: string | null
           created_at?: string
           description: string
           due_date: string
@@ -378,6 +391,7 @@ export type Database = {
         Update: {
           amount?: number
           approval_status?: string
+          company_id?: string | null
           created_at?: string
           description?: string
           due_date?: string
@@ -389,6 +403,77 @@ export type Database = {
           reminder_sent_at?: string | null
           source?: string
           user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "user_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_companies: {
+        Row: {
+          company_name: string
+          country: string
+          created_at: string
+          currency: string
+          current_balance: number
+          fortnox_tenant_id: string | null
+          id: string
+          include_pending_in_forecast: boolean
+          is_active: boolean
+          is_primary: boolean
+          last_low_balance_alert_at: string | null
+          last_low_balance_alert_key: string | null
+          last_weekly_summary_sent_at: string | null
+          monthly_revenue_target: number | null
+          threshold: number
+          updated_at: string
+          user_id: string
+          vat_period: string
+        }
+        Insert: {
+          company_name?: string
+          country?: string
+          created_at?: string
+          currency?: string
+          current_balance?: number
+          fortnox_tenant_id?: string | null
+          id?: string
+          include_pending_in_forecast?: boolean
+          is_active?: boolean
+          is_primary?: boolean
+          last_low_balance_alert_at?: string | null
+          last_low_balance_alert_key?: string | null
+          last_weekly_summary_sent_at?: string | null
+          monthly_revenue_target?: number | null
+          threshold?: number
+          updated_at?: string
+          user_id: string
+          vat_period?: string
+        }
+        Update: {
+          company_name?: string
+          country?: string
+          created_at?: string
+          currency?: string
+          current_balance?: number
+          fortnox_tenant_id?: string | null
+          id?: string
+          include_pending_in_forecast?: boolean
+          is_active?: boolean
+          is_primary?: boolean
+          last_low_balance_alert_at?: string | null
+          last_low_balance_alert_key?: string | null
+          last_weekly_summary_sent_at?: string | null
+          monthly_revenue_target?: number | null
+          threshold?: number
+          updated_at?: string
+          user_id?: string
+          vat_period?: string
         }
         Relationships: []
       }

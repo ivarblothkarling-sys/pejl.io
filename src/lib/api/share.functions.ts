@@ -62,30 +62,24 @@ export const getSharedDashboard = createServerFn({ method: "GET" })
     if (row.expires_at && new Date(row.expires_at) < new Date()) throw notFound();
 
     const userId = row.user_id as string;
-    const [profileRes, txRes] = await Promise.all([
-      supabaseAdmin.from("profiles").select("*").eq("id", userId).maybeSingle(),
-      supabaseAdmin
-        .from("transactions")
-        .select("*")
-        .eq("user_id", userId)
-        .order("due_date", { ascending: true }),
-    ]);
-    if (profileRes.error) throw new Error(profileRes.error.message);
-    if (txRes.error) throw new Error(txRes.error.message);
+    // share_tokens är inte bolagsspecifik — delar alltid användarens PRIMÄRA
+    // bolag (matchar dashboardens default-vy innan en användare aktivt byter
+    // bolag i väljaren).
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const profile = await resolveCompany(supabaseAdmin, userId, null);
+    const { data: txData, error: txError } = await supabaseAdmin
+      .from("transactions")
+      .select("*")
+      .eq("company_id", profile.id)
+      .order("due_date", { ascending: true });
+    if (txError) throw new Error(txError.message);
 
-    const profile = profileRes.data ?? {
-      current_balance: 0,
-      threshold: 0,
-      company_name: "Företaget",
-      country: "SE",
-      vat_period: "monthly",
-    };
     const country = ((profile as { country?: string }).country ?? "SE") as
       "SE" | "NO" | "GB" | "US";
     const vatPeriod = ((profile as { vat_period?: string }).vat_period ?? "monthly") as
       "monthly" | "quarterly" | "yearly";
     const transactions = [
-      ...((txRes.data ?? []) as Tx[]),
+      ...((txData ?? []) as Tx[]),
       ...computeTaxEvents(country, new Date(), 14, vatPeriod),
     ].sort((a, b) => a.due_date.localeCompare(b.due_date));
 

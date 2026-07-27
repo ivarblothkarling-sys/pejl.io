@@ -12,19 +12,20 @@ const vatPeriodEnum = z.enum(["monthly", "quarterly", "yearly"]);
 
 export const getUserSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: { companyId?: string } | undefined) => input ?? {})
+  .handler(async ({ data: input, context }) => {
     const { supabase, userId } = context;
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
     // select("*") istället för en namngiven kolumnlista — en namngiven lista
     // failar HÅRT (Postgrest-fel, inte bara ett saknat fält) om en enda
     // kolumn saknas i databasen, vilket gjorde att Inställningar-sidan
     // fastnade permanent på "Laddar…" när vat_period-migrationen ännu inte
     // var synkad till produktions-DB:n. select("*") degraderar snällt precis
     // som getDashboardData m.fl. redan gör.
-    const { data: profile, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .maybeSingle();
+    const [{ data: profile, error }, company] = await Promise.all([
+      supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
+      resolveCompany(supabase, userId, input.companyId),
+    ]);
     if (error) throw new Error(error.message);
 
     const { data: waitlist } = await supabase
@@ -33,13 +34,14 @@ export const getUserSettings = createServerFn({ method: "GET" })
       .eq("user_id", userId);
 
     return {
+      companyId: company.id,
       accounting_provider: profile?.accounting_provider ?? "fortnox",
-      currency: profile?.currency ?? "SEK",
-      country: profile?.country ?? "SE",
+      currency: company.currency ?? "SEK",
+      country: company.country ?? "SE",
       language: profile?.language ?? "sv",
-      include_pending_in_forecast: profile?.include_pending_in_forecast ?? false,
+      include_pending_in_forecast: company.include_pending_in_forecast ?? false,
       billing_status: (profile?.billing_status ?? "trial") as "trial" | "active" | "cancelled",
-      vat_period: (profile?.vat_period ?? "monthly") as "monthly" | "quarterly" | "yearly",
+      vat_period: (company.vat_period ?? "monthly") as "monthly" | "quarterly" | "yearly",
       waitlist: (waitlist ?? []).map((w) => w.provider as string),
     };
   });
@@ -53,15 +55,41 @@ export const updateUserSettings = createServerFn({ method: "POST" })
       country: countryEnum.optional(),
       language: languageEnum.optional(),
       vat_period: vatPeriodEnum.optional(),
+      companyId: z.string().uuid().optional(),
     }),
   )
   .handler(async ({ data, context }) => {
-    if (Object.keys(data).length === 0) return { ok: true };
-    const { error } = await context.supabase
-      .from("profiles")
-      .update({ ...data, updated_at: new Date().toISOString() })
-      .eq("id", context.userId);
-    if (error) throw new Error(error.message);
+    const { accounting_provider, language, currency, country, vat_period, companyId } = data;
+    const profileUpdate: Record<string, unknown> = {};
+    if (accounting_provider !== undefined) profileUpdate.accounting_provider = accounting_provider;
+    if (language !== undefined) profileUpdate.language = language;
+
+    const companyUpdate: Record<string, unknown> = {};
+    if (currency !== undefined) companyUpdate.currency = currency;
+    if (country !== undefined) companyUpdate.country = country;
+    if (vat_period !== undefined) companyUpdate.vat_period = vat_period;
+
+    if (Object.keys(profileUpdate).length === 0 && Object.keys(companyUpdate).length === 0) {
+      return { ok: true };
+    }
+
+    if (Object.keys(profileUpdate).length > 0) {
+      const { error } = await context.supabase
+        .from("profiles")
+        .update({ ...profileUpdate, updated_at: new Date().toISOString() })
+        .eq("id", context.userId);
+      if (error) throw new Error(error.message);
+    }
+
+    if (Object.keys(companyUpdate).length > 0) {
+      const { resolveCompany } = await import("@/lib/api/companies.functions");
+      const company = await resolveCompany(context.supabase, context.userId, companyId);
+      const { error } = await context.supabase
+        .from("user_companies")
+        .update({ ...companyUpdate, updated_at: new Date().toISOString() })
+        .eq("id", company.id);
+      if (error) throw new Error(error.message);
+    }
     return { ok: true };
   });
 
@@ -93,26 +121,30 @@ export const importSieData = createServerFn({ method: "POST" })
       companyName: z.string().max(200).optional(),
       currentBalance: z.number(),
       transactions: z.array(sieTxSchema).max(500),
+      companyId: z.string().uuid().optional(),
     }),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const company = await resolveCompany(supabase, userId, data.companyId);
 
-    // Update profile: provider=sie, balance, company name
-    const profileUpdate: {
-      accounting_provider: "sie";
-      current_balance: number;
-      updated_at: string;
-      company_name?: string;
-    } = {
-      accounting_provider: "sie",
+    const { error: pErr } = await supabase
+      .from("profiles")
+      .update({ accounting_provider: "sie", updated_at: new Date().toISOString() })
+      .eq("id", userId);
+    if (pErr) throw new Error(pErr.message);
+
+    const companyUpdate: { current_balance: number; updated_at: string; company_name?: string } = {
       current_balance: data.currentBalance,
       updated_at: new Date().toISOString(),
     };
-    if (data.companyName) profileUpdate.company_name = data.companyName;
-
-    const { error: pErr } = await supabase.from("profiles").update(profileUpdate).eq("id", userId);
-    if (pErr) throw new Error(pErr.message);
+    if (data.companyName) companyUpdate.company_name = data.companyName;
+    const { error: cErr } = await supabase
+      .from("user_companies")
+      .update(companyUpdate)
+      .eq("id", company.id);
+    if (cErr) throw new Error(cErr.message);
 
     // Dedup mot redan importerade SIE-rader istället för att blint tömma och
     // återinsätta — annars skulle en omkörning av samma fil (eller en fil som
@@ -123,7 +155,7 @@ export const importSieData = createServerFn({ method: "POST" })
     const { data: existingSie, error: existingErr } = await supabase
       .from("transactions")
       .select("due_date, amount")
-      .eq("user_id", userId)
+      .eq("company_id", company.id)
       .eq("source", "sie");
     if (existingErr) throw new Error(existingErr.message);
 
@@ -137,6 +169,7 @@ export const importSieData = createServerFn({ method: "POST" })
     if (newTransactions.length > 0) {
       const rows = newTransactions.map((t) => ({
         user_id: userId,
+        company_id: company.id,
         kind: t.kind,
         amount: t.amount,
         due_date: t.due_date,
@@ -211,6 +244,7 @@ const ACCOUNT_DATA_TABLES = [
   "tink_connections",
   "chat_messages",
   "share_tokens",
+  "user_companies",
 ] as const;
 
 /**

@@ -1,8 +1,10 @@
-// Server-only: skickar den månatliga PDF-rapporten till alla användare med
-// en giltig (icke utgången) Fortnox-koppling, plus till deras kopplade
-// redovisningsbyrå om en sådan finns. Anropas från Cloudflare Workers
-// scheduled-hanteraren i plugins/cloudflare-scheduled.ts — se wrangler.toml
-// för cron-schemat (1:a varje månad).
+// Server-only: skickar den månatliga PDF-rapporten för alla BOLAG
+// (user_companies) med en giltig (icke utgången) Fortnox-koppling, plus till
+// deras kopplade redovisningsbyrå om en sådan finns (byrå-kopplingen är
+// fortfarande per ANVÄNDARE, inte per bolag — se agency.functions.ts).
+// Anropas från Cloudflare Workers scheduled-hanteraren i
+// plugins/cloudflare-scheduled.ts — se wrangler.toml för cron-schemat
+// (1:a varje månad).
 import type { Tx } from "@/lib/forecast";
 
 export async function runMonthlyReportDigest() {
@@ -12,7 +14,7 @@ export async function runMonthlyReportDigest() {
 
   const { data: connections, error } = await supabaseAdmin
     .from("fortnox_connections")
-    .select("user_id")
+    .select("user_id, company_id")
     .gt("expires_at", new Date().toISOString());
   if (error) {
     console.error("[monthlyReportDigest] Kunde inte hämta fortnox_connections:", error.message);
@@ -23,17 +25,20 @@ export async function runMonthlyReportDigest() {
   let failed = 0;
 
   for (const conn of connections ?? []) {
+    const companyId = conn.company_id;
+    if (!companyId) continue;
+
     try {
       const [
         { data: userRes },
-        { data: profile, error: profileErr },
+        { data: company, error: companyErr },
         { data: txRows, error: txErr },
       ] = await Promise.all([
         supabaseAdmin.auth.admin.getUserById(conn.user_id),
-        supabaseAdmin.from("profiles").select("*").eq("id", conn.user_id).maybeSingle(),
-        supabaseAdmin.from("transactions").select("*").eq("user_id", conn.user_id),
+        supabaseAdmin.from("user_companies").select("*").eq("id", companyId).maybeSingle(),
+        supabaseAdmin.from("transactions").select("*").eq("company_id", companyId),
       ]);
-      if (profileErr) throw new Error(profileErr.message);
+      if (companyErr) throw new Error(companyErr.message);
       if (txErr) throw new Error(txErr.message);
 
       const userEmail = userRes.user?.email;
@@ -44,9 +49,9 @@ export async function runMonthlyReportDigest() {
         continue;
       }
 
-      const companyName = profile?.company_name ?? "ditt företag";
+      const companyName = company?.company_name ?? "ditt företag";
       const reportData = buildMonthlyReportData(
-        profile ?? { current_balance: 0, threshold: 0, company_name: companyName, country: "SE" },
+        company ?? { current_balance: 0, threshold: 0, company_name: companyName, country: "SE" },
         (txRows ?? []) as Tx[],
       );
       const pdfBytes = await renderMonthlyReportPdf(reportData);
@@ -87,18 +92,18 @@ export async function runMonthlyReportDigest() {
         await createNotification({
           userId: conn.user_id,
           type: "monthly_report",
-          title: `Månadsrapporten för ${reportData.periodLabel} är klar`,
+          title: `Månadsrapporten för ${companyName} (${reportData.periodLabel}) är klar`,
           body: `Skickad till ${recipients.join(", ")}.`,
         });
       } catch (notifErr) {
         console.error(
-          `[monthlyReportDigest] Kunde inte skapa notis för ${conn.user_id}:`,
+          `[monthlyReportDigest] Kunde inte skapa notis för bolag ${companyId}:`,
           notifErr,
         );
       }
     } catch (err) {
       failed += 1;
-      console.error(`[monthlyReportDigest] Misslyckades för ${conn.user_id}:`, err);
+      console.error(`[monthlyReportDigest] Misslyckades för bolag ${companyId}:`, err);
     }
   }
 

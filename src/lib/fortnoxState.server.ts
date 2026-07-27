@@ -2,6 +2,8 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 type FortnoxStatePayload = {
   userId: string;
+  /** Bolaget som ska kopplas. null = användaren ansluter ett NYTT bolag — callbacken skapar en ny user_companies-rad. */
+  companyId: string | null;
   exp: number;
   nonce: string;
 };
@@ -25,9 +27,14 @@ function signaturesMatch(a: string, b: string) {
   return timingSafeEqual(left, right);
 }
 
-export function createFortnoxState(userId: string, secret: string) {
+export function createFortnoxState(
+  userId: string,
+  secret: string,
+  companyId: string | null = null,
+) {
   const payload: FortnoxStatePayload = {
     userId,
+    companyId,
     exp: Date.now() + 10 * 60 * 1000,
     nonce: randomBytes(16).toString("base64url"),
   };

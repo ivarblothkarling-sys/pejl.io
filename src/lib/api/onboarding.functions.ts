@@ -6,22 +6,27 @@ export const getOnboardingStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { ensureUserBootstrap } = await import("@/lib/userBootstrap.server");
-    await ensureUserBootstrap({
+    const { primaryCompanyId } = await ensureUserBootstrap({
       supabase: context.supabase,
       userId: context.userId,
       claims: context.claims,
     });
 
-    const { data, error } = await context.supabase
-      .from("profiles")
-      .select("onboarding_completed, threshold, company_name")
-      .eq("id", context.userId)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
+    const [{ data: profile, error: profileErr }, { data: company, error: companyErr }] =
+      await Promise.all([
+        context.supabase.from("profiles").select("*").eq("id", context.userId).maybeSingle(),
+        context.supabase
+          .from("user_companies")
+          .select("*")
+          .eq("id", primaryCompanyId)
+          .maybeSingle(),
+      ]);
+    if (profileErr) throw new Error(profileErr.message);
+    if (companyErr) throw new Error(companyErr.message);
     return {
-      completed: Boolean(data?.onboarding_completed),
-      threshold: Number(data?.threshold ?? 0),
-      companyName: data?.company_name ?? "",
+      completed: Boolean(profile?.onboarding_completed),
+      threshold: Number(company?.threshold ?? 0),
+      companyName: company?.company_name ?? "",
     };
   });
 
@@ -29,20 +34,28 @@ export const completeOnboarding = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ threshold: z.number().min(0), companyName: z.string().optional() }))
   .handler(async ({ data, context }) => {
-    const update: {
-      onboarding_completed: boolean;
-      threshold: number;
-      updated_at: string;
-      company_name?: string;
-    } = {
-      onboarding_completed: true,
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const company = await resolveCompany(context.supabase, context.userId, null);
+
+    const companyUpdate: { threshold: number; updated_at: string; company_name?: string } = {
       threshold: data.threshold,
       updated_at: new Date().toISOString(),
     };
-    if (data.companyName && data.companyName.trim()) update.company_name = data.companyName.trim();
-    const { error } = await context.supabase
+    if (data.companyName && data.companyName.trim()) {
+      companyUpdate.company_name = data.companyName.trim();
+    }
+    const { error: companyErr } = await context.supabase
+      .from("user_companies")
+      .update(companyUpdate)
+      .eq("id", company.id);
+    if (companyErr) throw new Error(companyErr.message);
+
+    const { error: profileErr } = await context.supabase
       .from("profiles")
-      .upsert({ id: context.userId, ...update }, { onConflict: "id" });
-    if (error) throw new Error(error.message);
+      .upsert(
+        { id: context.userId, onboarding_completed: true, updated_at: new Date().toISOString() },
+        { onConflict: "id" },
+      );
+    if (profileErr) throw new Error(profileErr.message);
     return { ok: true };
   });

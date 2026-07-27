@@ -3,20 +3,31 @@ import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-export async function syncFortnoxForUser(userId: string) {
+const FORTNOX_SCOPES = [
+  "companyinformation",
+  "invoice",
+  "supplierinvoice",
+  "bookkeeping",
+  "payment",
+  "customer",
+].join(" ");
+
+/** Kör en full synk mot Fortnox för ETT specifikt bolag (user_companies-rad). */
+export async function syncFortnoxForCompany(companyId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data: conn, error: connErr } = await supabaseAdmin
     .from("fortnox_connections")
     .select("user_id, access_token, refresh_token, expires_at, scope")
-    .eq("user_id", userId)
+    .eq("company_id", companyId)
     .maybeSingle();
   if (connErr) throw new Error(connErr.message);
-  if (!conn) throw new Error("Ingen Fortnox-koppling hittad för den här användaren.");
+  if (!conn) throw new Error("Ingen Fortnox-koppling hittad för det här bolaget.");
+  const userId = conn.user_id;
 
   const { ensureFreshFortnoxToken, fetchFortnoxOpenTransactions, fetchFortnoxFullyPaidInvoices } =
     await import("@/lib/fortnoxApi.server");
   const accessToken = await ensureFreshFortnoxToken(conn);
-  const [{ companyName, transactions }, paidInvoices] = await Promise.all([
+  const [{ companyName, fortnoxTenantId, transactions }, paidInvoices] = await Promise.all([
     fetchFortnoxOpenTransactions(accessToken),
     fetchFortnoxFullyPaidInvoices(accessToken),
   ]);
@@ -29,19 +40,20 @@ export async function syncFortnoxForUser(userId: string) {
     const { error } = await supabaseAdmin
       .from("transactions")
       .update({ paid: true, paid_at: p.finalPayDate })
-      .eq("user_id", userId)
+      .eq("company_id", companyId)
       .eq("source", "fortnox")
       .eq("external_id", p.externalId);
     if (error) throw new Error(error.message);
   }
 
-  // 2) Ta bort gamla öppna Fortnox-rader (och mock-data) — men rör aldrig
-  // rader som precis markerades betalda i steg 1.
+  // 2) Ta bort gamla öppna Fortnox-rader (och mock-data) för DET HÄR bolaget
+  // — scopat på company_id, inte bara user_id, så en synk av bolag A aldrig
+  // rör transaktioner som hör till bolag B för samma användare.
   const paidExternalIds = new Set(paidInvoices.map((p) => p.externalId));
   const { data: existingFortnoxRows, error: existingErr } = await supabaseAdmin
     .from("transactions")
     .select("id, external_id")
-    .eq("user_id", userId)
+    .eq("company_id", companyId)
     .eq("source", "fortnox");
   if (existingErr) throw new Error(existingErr.message);
 
@@ -55,7 +67,7 @@ export async function syncFortnoxForUser(userId: string) {
   const { error: mockDelErr } = await supabaseAdmin
     .from("transactions")
     .delete()
-    .eq("user_id", userId)
+    .eq("company_id", companyId)
     .eq("source", "mock");
   if (mockDelErr) throw new Error(mockDelErr.message);
 
@@ -63,6 +75,7 @@ export async function syncFortnoxForUser(userId: string) {
   if (transactions.length > 0) {
     const rows = transactions.map((t) => ({
       user_id: userId,
+      company_id: companyId,
       external_id: t.externalId,
       kind: t.kind,
       amount: t.amount,
@@ -76,11 +89,13 @@ export async function syncFortnoxForUser(userId: string) {
     if (insErr) throw new Error(insErr.message);
   }
 
-  if (companyName) {
-    await supabaseAdmin
-      .from("profiles")
-      .update({ company_name: companyName, updated_at: new Date().toISOString() })
-      .eq("id", userId);
+  const companyUpdate: { updated_at: string; company_name?: string; fortnox_tenant_id?: string } = {
+    updated_at: new Date().toISOString(),
+  };
+  if (companyName) companyUpdate.company_name = companyName;
+  if (fortnoxTenantId) companyUpdate.fortnox_tenant_id = fortnoxTenantId;
+  if (companyUpdate.company_name || companyUpdate.fortnox_tenant_id) {
+    await supabaseAdmin.from("user_companies").update(companyUpdate).eq("id", companyId);
   }
 
   return { imported: transactions.length, markedPaid: paidInvoices.length, companyName };
@@ -88,17 +103,11 @@ export async function syncFortnoxForUser(userId: string) {
 
 export const getFortnoxAuthUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { redirectUri?: string } | undefined) => input ?? {})
+  .inputValidator(
+    (input: { redirectUri?: string; companyId?: string; newCompany?: boolean } | undefined) =>
+      input ?? {},
+  )
   .handler(async ({ data, context }) => {
-    const fortnoxScopes = [
-      "companyinformation",
-      "invoice",
-      "supplierinvoice",
-      "bookkeeping",
-      "payment",
-      "customer",
-    ].join(" ");
-    // Läs server-side env (aldrig import.meta.env för secrets).
     const clientId = process.env.FORTNOX_CLIENT_ID;
     const clientSecret = process.env.FORTNOX_CLIENT_SECRET;
     console.log(
@@ -123,18 +132,29 @@ export const getFortnoxAuthUrl = createServerFn({ method: "POST" })
         "Fortnox är inte konfigurerad — FORTNOX_CLIENT_SECRET saknas i miljövariablerna.",
       );
     }
+
+    // newCompany = användaren ansluter ett YTTERLIGARE bolag — state.companyId
+    // blir null och callbacken skapar en ny user_companies-rad. Annars kopplas
+    // (eller kopplas om) den angivna raden, eller — vanligast, förstagångs-
+    // koppling under onboarding — användarens primära bolag.
+    let companyId: string | null = null;
+    if (!data.newCompany) {
+      const { resolveCompany } = await import("@/lib/api/companies.functions");
+      const company = await resolveCompany(context.supabase, context.userId, data.companyId);
+      companyId = company.id;
+    }
+
     const { createFortnoxState } = await import("@/lib/fortnoxState.server");
-    const state = createFortnoxState(context.userId, clientSecret);
+    const state = createFortnoxState(context.userId, clientSecret, companyId);
     const redirectUri =
       data?.redirectUri && /^https?:\/\//.test(data.redirectUri)
         ? data.redirectUri
-        : (process.env.FORTNOX_REDIRECT_URI ??
-          "https://pejl.io/auth/fortnox/callback");
+        : (process.env.FORTNOX_REDIRECT_URI ?? "https://pejl.io/auth/fortnox/callback");
     console.log("[Fortnox] Bygger OAuth-URL med redirectUri:", redirectUri);
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
-      scope: fortnoxScopes,
+      scope: FORTNOX_SCOPES,
       state,
       response_type: "code",
       access_type: "offline",
@@ -146,17 +166,20 @@ export const getFortnoxAuthUrl = createServerFn({ method: "POST" })
 
 export const getFortnoxStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
+  .inputValidator((input: { companyId?: string } | undefined) => input ?? {})
+  .handler(async ({ data, context }) => {
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const company = await resolveCompany(context.supabase, context.userId, data.companyId);
+    const { data: conn, error } = await context.supabase
       .from("fortnox_connections")
       .select("created_at, scope, expires_at")
-      .eq("user_id", context.userId)
+      .eq("company_id", company.id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     return {
-      connected: !!data,
-      connectedAt: data?.created_at ?? null,
-      expiresAt: data?.expires_at ?? null,
+      connected: !!conn,
+      connectedAt: conn?.created_at ?? null,
+      expiresAt: conn?.expires_at ?? null,
     };
   });
 
@@ -169,14 +192,6 @@ export const exchangeFortnoxCode = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const fortnoxScopes = [
-      "companyinformation",
-      "invoice",
-      "supplierinvoice",
-      "bookkeeping",
-      "payment",
-      "customer",
-    ].join(" ");
     const clientId = process.env.FORTNOX_CLIENT_ID;
     const clientSecret = process.env.FORTNOX_CLIENT_SECRET;
     if (!clientId || !clientSecret) {
@@ -192,8 +207,7 @@ export const exchangeFortnoxCode = createServerFn({ method: "POST" })
     const redirectUri =
       data.redirectUri && /^https?:\/\//.test(data.redirectUri)
         ? data.redirectUri
-        : (process.env.FORTNOX_REDIRECT_URI ??
-          "https://pejl.io/auth/fortnox/callback");
+        : (process.env.FORTNOX_REDIRECT_URI ?? "https://pejl.io/auth/fortnox/callback");
     const body = new URLSearchParams({
       grant_type: "authorization_code",
       code: data.code,
@@ -227,51 +241,71 @@ export const exchangeFortnoxCode = createServerFn({ method: "POST" })
       : null;
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error: upsertErr } = await supabaseAdmin
-      .from("fortnox_connections")
-      .upsert(
-        {
-          user_id: statePayload.userId,
-          access_token: json.access_token,
-          refresh_token: json.refresh_token,
-          expires_at: expiresAt,
-          scope: json.scope ?? fortnoxScopes,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id" },
-      );
+
+    // companyId null = användaren anslöt ett NYTT bolag — skapa raden nu,
+    // innan fortnox_connections skrivs, så den unika (company_id)-nyckeln
+    // alltid pekar på ett riktigt bolag.
+    let companyId = statePayload.companyId;
+    if (!companyId) {
+      const { data: created, error: createErr } = await supabaseAdmin
+        .from("user_companies")
+        .insert({ user_id: statePayload.userId, company_name: "Nytt bolag", is_primary: false })
+        .select("id")
+        .single();
+      if (createErr) throw new Error(createErr.message);
+      companyId = created.id;
+    }
+
+    const { error: upsertErr } = await supabaseAdmin.from("fortnox_connections").upsert(
+      {
+        user_id: statePayload.userId,
+        company_id: companyId,
+        access_token: json.access_token,
+        refresh_token: json.refresh_token,
+        expires_at: expiresAt,
+        scope: json.scope ?? FORTNOX_SCOPES,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "company_id" },
+    );
     if (upsertErr) throw new Error(upsertErr.message);
 
     // Kör en initial synk direkt så användaren ser riktig Fortnox-data
     // så snart hen kommer tillbaka till dashboarden.
     let imported = 0;
     try {
-      const result = await syncFortnoxForUser(statePayload.userId);
+      const result = await syncFortnoxForCompany(companyId);
       imported = result.imported;
     } catch (err) {
       console.error("[Fortnox] Initial synk efter OAuth misslyckades:", err);
     }
 
-    return { ok: true, imported };
+    return { ok: true, imported, companyId };
   });
 
 export const syncFortnox = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    return syncFortnoxForUser(context.userId);
+  .inputValidator((input: { companyId?: string } | undefined) => input ?? {})
+  .handler(async ({ data, context }) => {
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const company = await resolveCompany(context.supabase, context.userId, data.companyId);
+    return syncFortnoxForCompany(company.id);
   });
 
 export const disconnectFortnox = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: { companyId?: string } | undefined) => input ?? {})
+  .handler(async ({ data, context }) => {
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const company = await resolveCompany(context.supabase, context.userId, data.companyId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    // Ta bort både kopplingen och Fortnox-hämtade transaktioner.
+    // Ta bort både kopplingen och Fortnox-hämtade transaktioner för DET HÄR bolaget.
     const [{ error: connErr }, { error: txErr }] = await Promise.all([
-      supabaseAdmin.from("fortnox_connections").delete().eq("user_id", context.userId),
+      supabaseAdmin.from("fortnox_connections").delete().eq("company_id", company.id),
       supabaseAdmin
         .from("transactions")
         .delete()
-        .eq("user_id", context.userId)
+        .eq("company_id", company.id)
         .eq("source", "fortnox"),
     ]);
     if (connErr) throw new Error(connErr.message);

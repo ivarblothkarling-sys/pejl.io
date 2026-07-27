@@ -15,7 +15,7 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
 
     const { data: profile, error: profileErr } = await supabase
       .from("profiles")
-      .select("stripe_customer_id, company_name")
+      .select("stripe_customer_id")
       .eq("id", userId)
       .maybeSingle();
     if (profileErr) throw new Error(profileErr.message);
@@ -26,10 +26,12 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
     // (t.ex. avbröt eller vill byta plan) — undviker dubbletter av kunder.
     let customerId = profile?.stripe_customer_id ?? undefined;
     if (!customerId) {
+      const { resolveCompany } = await import("@/lib/api/companies.functions");
+      const company = await resolveCompany(supabase, userId, null);
       const email = claims?.email as string | undefined;
       const customer = await stripe.customers.create({
         email,
-        name: profile?.company_name ?? undefined,
+        name: company.company_name ?? undefined,
         metadata: { supabase_user_id: userId },
       });
       customerId = customer.id;

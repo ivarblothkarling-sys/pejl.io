@@ -21,7 +21,7 @@ function companyNameFromClaims(claims?: ClaimsLike) {
   );
 }
 
-function mockTransactions(userId: string) {
+function mockTransactions(userId: string, companyId: string) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return [
@@ -41,6 +41,7 @@ function mockTransactions(userId: string) {
     ["income", 7600, 14, "Kundfaktura #1046 - Hantverkarna i Söder"],
   ].map(([kind, amount, offset, description]) => ({
     user_id: userId,
+    company_id: companyId,
     kind: String(kind),
     amount: Number(amount),
     due_date: addDaysIso(today, Number(offset)),
@@ -50,6 +51,12 @@ function mockTransactions(userId: string) {
   }));
 }
 
+/**
+ * Säkerställer att kontot har en profil (kontonivå) + ett primärt bolag
+ * (user_companies) + startdata. Returnerar id för det primära bolaget så
+ * anropande kod (t.ex. getDashboardData) slipper en extra rundtripp för
+ * det vanliga fallet "ingen companyId angiven".
+ */
 export async function ensureUserBootstrap({
   supabase,
   userId,
@@ -58,7 +65,7 @@ export async function ensureUserBootstrap({
   supabase: SupabaseLike;
   userId: string;
   claims?: ClaimsLike;
-}) {
+}): Promise<{ primaryCompanyId: string }> {
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("id")
@@ -69,14 +76,36 @@ export async function ensureUserBootstrap({
   if (!profile) {
     const { error: insertProfileError } = await supabase.from("profiles").insert({
       id: userId,
-      company_name: companyNameFromClaims(claims),
-      current_balance: 48500,
-      threshold: 5000,
       onboarding_completed: false,
     });
     if (insertProfileError && insertProfileError.code !== "23505") {
       throw new Error(insertProfileError.message);
     }
+  }
+
+  const { data: primaryCompany, error: companyError } = await supabase
+    .from("user_companies")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("is_primary", true)
+    .maybeSingle();
+  if (companyError) throw new Error(companyError.message);
+
+  let primaryCompanyId = primaryCompany?.id as string | undefined;
+  if (!primaryCompanyId) {
+    const { data: created, error: insertCompanyError } = await supabase
+      .from("user_companies")
+      .insert({
+        user_id: userId,
+        company_name: companyNameFromClaims(claims),
+        current_balance: 48500,
+        threshold: 5000,
+        is_primary: true,
+      })
+      .select("id")
+      .single();
+    if (insertCompanyError) throw new Error(insertCompanyError.message);
+    primaryCompanyId = created.id as string;
   }
 
   const { count, error: countError } = await supabase
@@ -88,7 +117,7 @@ export async function ensureUserBootstrap({
   if ((count ?? 0) === 0) {
     const { error: insertTxError } = await supabase
       .from("transactions")
-      .insert(mockTransactions(userId));
+      .insert(mockTransactions(userId, primaryCompanyId));
     if (insertTxError) throw new Error(insertTxError.message);
   }
 
@@ -99,4 +128,6 @@ export async function ensureUserBootstrap({
     .from("profiles")
     .update({ last_login_at: new Date().toISOString() })
     .eq("id", userId);
+
+  return { primaryCompanyId };
 }

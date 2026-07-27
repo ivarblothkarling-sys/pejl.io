@@ -44,7 +44,9 @@ export async function refreshFortnoxTokens(
   });
   if (!res.ok) {
     const text = await res.text();
-    const err = new Error(`Fortnox refresh misslyckades: ${res.status} ${text}`) as Error & { invalidGrant?: boolean };
+    const err = new Error(`Fortnox refresh misslyckades: ${res.status} ${text}`) as Error & {
+      invalidGrant?: boolean;
+    };
     if (res.status === 400 && text.includes("invalid_grant")) err.invalidGrant = true;
     throw err;
   }
@@ -68,9 +70,7 @@ export async function refreshFortnoxTokens(
  * Se till att kopplingen har ett giltigt access-token. Om det är utgånget
  * (eller går ut inom 60s) — refresha och spara det nya paret i databasen.
  */
-export async function ensureFreshFortnoxToken(
-  conn: FortnoxConnectionRow,
-): Promise<string> {
+export async function ensureFreshFortnoxToken(conn: FortnoxConnectionRow): Promise<string> {
   const clientId = process.env.FORTNOX_CLIENT_ID;
   const clientSecret = process.env.FORTNOX_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
@@ -153,7 +153,7 @@ interface FortnoxSupplierInvoicesResponse {
   SupplierInvoices?: FortnoxSupplierInvoiceListItem[];
 }
 interface FortnoxCompanyInformationResponse {
-  CompanyInformation?: { CompanyName?: string };
+  CompanyInformation?: { CompanyName?: string; DatabaseNumber?: string | number };
 }
 
 export interface FortnoxFetchedTx {
@@ -166,22 +166,17 @@ export interface FortnoxFetchedTx {
 }
 
 /** Hämtar öppna kund- och leverantörsfakturor och normaliserar till Tx-shape. */
-export async function fetchFortnoxOpenTransactions(
-  accessToken: string,
-): Promise<{ companyName: string | null; transactions: FortnoxFetchedTx[] }> {
+export async function fetchFortnoxOpenTransactions(accessToken: string): Promise<{
+  companyName: string | null;
+  fortnoxTenantId: string | null;
+  transactions: FortnoxFetchedTx[];
+}> {
   const [invRes, supRes, companyRes] = await Promise.all([
-    fortnoxGet<FortnoxInvoicesResponse>(
-      "/invoices?filter=unpaid",
-      accessToken,
+    fortnoxGet<FortnoxInvoicesResponse>("/invoices?filter=unpaid", accessToken),
+    fortnoxGet<FortnoxSupplierInvoicesResponse>("/supplierinvoices?filter=unpaid", accessToken),
+    fortnoxGet<FortnoxCompanyInformationResponse>("/companyinformation", accessToken).catch(
+      () => ({}) as FortnoxCompanyInformationResponse,
     ),
-    fortnoxGet<FortnoxSupplierInvoicesResponse>(
-      "/supplierinvoices?filter=unpaid",
-      accessToken,
-    ),
-    fortnoxGet<FortnoxCompanyInformationResponse>(
-      "/companyinformation",
-      accessToken,
-    ).catch(() => ({}) as FortnoxCompanyInformationResponse),
   ]);
 
   const transactions: FortnoxFetchedTx[] = [];
@@ -195,7 +190,8 @@ export async function fetchFortnoxOpenTransactions(
       kind: "income",
       amount,
       dueDate: inv.DueDate,
-      description: `Kundfaktura #${inv.DocumentNumber ?? ""} — ${inv.CustomerName ?? "Okänd kund"}`.trim(),
+      description:
+        `Kundfaktura #${inv.DocumentNumber ?? ""} — ${inv.CustomerName ?? "Okänd kund"}`.trim(),
     });
   }
 
@@ -210,13 +206,16 @@ export async function fetchFortnoxOpenTransactions(
       kind: "expense",
       amount,
       dueDate: sup.DueDate,
-      description: `Leverantörsfaktura #${sup.GivenNumber ?? ""} — ${sup.SupplierName ?? "Okänd leverantör"}`.trim(),
+      description:
+        `Leverantörsfaktura #${sup.GivenNumber ?? ""} — ${sup.SupplierName ?? "Okänd leverantör"}`.trim(),
       approvalStatus: approved ? "approved" : "pending_approval",
     });
   }
 
+  const databaseNumber = companyRes.CompanyInformation?.DatabaseNumber;
   return {
     companyName: companyRes.CompanyInformation?.CompanyName ?? null,
+    fortnoxTenantId: databaseNumber != null ? String(databaseNumber) : null,
     transactions,
   };
 }

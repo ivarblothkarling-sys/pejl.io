@@ -16,7 +16,7 @@ import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
 import { getCustomerRisk, getDashboardData } from "@/lib/api/finance.functions";
 import { computeForecast, formatMonthSv, formatSEK, type Tx } from "@/lib/forecast";
 
-type ChatRequestBody = { messages?: unknown };
+type ChatRequestBody = { messages?: unknown; companyId?: string };
 
 const DISCLAIMER =
   "Pejl ger dig och din redovisningskonsult en gemensam bild av likviditeten framåt – baserat på bokförd data i Fortnox. Ersätter inte bokföring eller rådgivning. Du och din konsult beslutar alltid själv.";
@@ -105,16 +105,16 @@ async function fetchRecentChatHistory(authHeader: string): Promise<UIMessage[]> 
     }));
 }
 
-async function buildSystemPrompt(): Promise<string> {
+async function buildSystemPrompt(companyId?: string): Promise<string> {
   const { profile, transactions, forecast, suggestions, awaitingApprovalSum } =
-    await getDashboardData();
+    await getDashboardData({ data: { companyId } });
 
   // Eget try/catch — ett fel här ska inte offra hela den datagrundade
   // systemprompten (buildSystemPrompt().catch(...) i POST-handlern nedan
   // faller annars tillbaka till ett generiskt, siffer-löst läge).
   let customerRisks: Awaited<ReturnType<typeof getCustomerRisk>> = [];
   try {
-    customerRisks = await getCustomerRisk();
+    customerRisks = await getCustomerRisk({ data: { companyId } });
   } catch (err) {
     console.error("[chat] Kunde inte hämta kreditrisk-data:", err);
   }
@@ -234,11 +234,11 @@ Om formatet inte matchar exakt returneras ett fel — gissa inte på ett annat f
  * åtgärder innan den svarar; om allt ser stabilt ut kan den (och ska den)
  * returnera en tom lista istället för att fylla på till ett visst antal.
  */
-async function buildSmartSuggestions(): Promise<string[]> {
+async function buildSmartSuggestions(companyId?: string): Promise<string[]> {
   const key = process.env.LOVABLE_API_KEY;
   if (!key) return [];
 
-  const { transactions, forecast, profile } = await getDashboardData();
+  const { transactions, forecast, profile } = await getDashboardData({ data: { companyId } });
   const country = ((profile as { country?: string }).country ?? "SE") as "SE" | "NO" | "GB" | "US";
   const vatPeriod = ((profile as { vat_period?: string }).vat_period ?? "monthly") as
     "monthly" | "quarterly" | "yearly";
@@ -360,7 +360,7 @@ export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const { messages } = (await request.json()) as ChatRequestBody;
+        const { messages, companyId } = (await request.json()) as ChatRequestBody;
         if (!Array.isArray(messages)) {
           return new Response("Messages required", { status: 400 });
         }
@@ -390,7 +390,7 @@ export const Route = createFileRoute("/api/chat")({
         // istället för att blint lita på hela meddelande-arrayen klienten skickar.
         const [history, system] = await Promise.all([
           fetchRecentChatHistory(authHeader),
-          buildSystemPrompt().catch((err) => {
+          buildSystemPrompt(companyId).catch((err) => {
             console.error("[chat] Kunde inte bygga systemprompt från dashboard-data:", err);
             return "Du är Pejl, en svensk ekonomiassistent. Kunde inte läsa aktuell ekonomidata just nu — svara kort och be användaren försöka igen om frågan kräver siffror.";
           }),
@@ -421,8 +421,9 @@ export const Route = createFileRoute("/api/chat")({
         const rateLimit = checkRateLimit(userId);
         if (!rateLimit.allowed) return rateLimitResponse(rateLimit.retryAfterSeconds);
 
+        const companyId = new URL(request.url).searchParams.get("companyId") ?? undefined;
         try {
-          const suggestions = await buildSmartSuggestions();
+          const suggestions = await buildSmartSuggestions(companyId);
           return Response.json({ suggestions });
         } catch (err) {
           console.error("[chat] Kunde inte generera smarta förslag:", err);

@@ -55,26 +55,31 @@ export const getAgencyClients = createServerFn({ method: "GET" })
 
     if (linkedIds.length > 0) {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const [profilesRes, txRes] = await Promise.all([
-        supabaseAdmin
-          .from("profiles")
-          .select(
-            "id, current_balance, threshold, include_pending_in_forecast, country, vat_period",
-          )
-          .in("id", linkedIds),
-        supabaseAdmin
-          .from("transactions")
-          .select(
-            "id, user_id, kind, amount, due_date, description, paid, approval_status, paid_at",
-          )
-          .in("user_id", linkedIds),
-      ]);
-      if (profilesRes.error) throw new Error(profilesRes.error.message);
-      if (txRes.error) throw new Error(txRes.error.message);
+      // Byrå-vyn känner bara till EN uppsättning siffror per klient (inte per
+      // bolag) — visar klientens PRIMÄRA bolag. Multi-bolagsstöd för byråer
+      // är utanför scopet för den här ändringen.
+      const { data: companies, error: companiesErr } = await supabaseAdmin
+        .from("user_companies")
+        .select(
+          "id, user_id, current_balance, threshold, include_pending_in_forecast, country, vat_period",
+        )
+        .in("user_id", linkedIds)
+        .eq("is_primary", true);
+      if (companiesErr) throw new Error(companiesErr.message);
 
-      const txByUser = new Map<string, Tx[]>();
-      for (const t of txRes.data ?? []) {
-        const list = txByUser.get(t.user_id) ?? [];
+      const companyIds = (companies ?? []).map((c) => c.id);
+      const { data: txRows, error: txErr } = await supabaseAdmin
+        .from("transactions")
+        .select(
+          "id, company_id, kind, amount, due_date, description, paid, approval_status, paid_at",
+        )
+        .in("company_id", companyIds);
+      if (txErr) throw new Error(txErr.message);
+
+      const txByCompany = new Map<string, Tx[]>();
+      for (const t of txRows ?? []) {
+        if (!t.company_id) continue;
+        const list = txByCompany.get(t.company_id) ?? [];
         list.push({
           id: t.id,
           kind: t.kind as Tx["kind"],
@@ -85,27 +90,26 @@ export const getAgencyClients = createServerFn({ method: "GET" })
           approval_status: t.approval_status as Tx["approval_status"],
           paid_at: t.paid_at,
         });
-        txByUser.set(t.user_id, list);
+        txByCompany.set(t.company_id, list);
       }
 
-      for (const p of profilesRes.data ?? []) {
-        const includePending = Boolean(p.include_pending_in_forecast);
-        const txs = (txByUser.get(p.id) ?? [])
+      for (const c of companies ?? []) {
+        const includePending = Boolean(c.include_pending_in_forecast);
+        const txs = (txByCompany.get(c.id) ?? [])
           .filter((t) => includePending || (t.approval_status ?? "approved") !== "pending_approval")
           .sort((a, b) => a.due_date.localeCompare(b.due_date));
         const forecast = computeForecast(
-          Number(p.current_balance) || 0,
-          Number(p.threshold) || 0,
+          Number(c.current_balance) || 0,
+          Number(c.threshold) || 0,
           txs,
           30,
           new Date(),
-          ((p as { country?: string }).country ?? "SE") as "SE" | "NO" | "GB" | "US",
-          ((p as { vat_period?: string }).vat_period ?? "monthly") as
-            "monthly" | "quarterly" | "yearly",
+          (c.country ?? "SE") as "SE" | "NO" | "GB" | "US",
+          (c.vat_period ?? "monthly") as "monthly" | "quarterly" | "yearly",
         );
-        liveByUserId.set(p.id, {
-          current_balance: Number(p.current_balance) || 0,
-          threshold: Number(p.threshold) || 0,
+        liveByUserId.set(c.user_id, {
+          current_balance: Number(c.current_balance) || 0,
+          threshold: Number(c.threshold) || 0,
           breachDate: forecast.breachDate,
           breachAmount: forecast.breachAmount,
           minBalance: forecast.minBalance,
@@ -210,11 +214,8 @@ export const inviteAgencyClient = createServerFn({ method: "POST" })
     if (!client) throw new Error("Klienten hittades inte.");
     if (client.client_user_id) throw new Error("Den här klienten är redan kopplad till ett konto.");
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("company_name")
-      .eq("id", userId)
-      .maybeSingle();
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const agencyCompany = await resolveCompany(supabase, userId, null);
 
     const token = nanoid();
     const acceptUrl = `https://pejl.io/accept-invite?token=${token}`;
@@ -229,7 +230,7 @@ export const inviteAgencyClient = createServerFn({ method: "POST" })
     const { sendAgencyInviteEmail } = await import("@/lib/agencyInviteEmail.server");
     const result = await sendAgencyInviteEmail({
       to: data.email,
-      agencyName: profile?.company_name ?? "Din redovisningsbyrå",
+      agencyName: agencyCompany.company_name ?? "Din redovisningsbyrå",
       clientName: client.name,
       acceptUrl,
     });
@@ -266,11 +267,8 @@ export const acceptAgencyInvite = createServerFn({ method: "POST" })
     if (!client) throw new Error("Klienten hittades inte längre.");
     if (client.client_user_id) throw new Error("Den här klienten är redan kopplad till ett konto.");
 
-    const { data: agencyProfile } = await supabaseAdmin
-      .from("profiles")
-      .select("company_name")
-      .eq("id", invite.agency_user_id)
-      .maybeSingle();
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const agencyCompany = await resolveCompany(supabaseAdmin, invite.agency_user_id, null);
 
     const { error: linkErr } = await supabaseAdmin
       .from("agency_clients")
@@ -287,6 +285,6 @@ export const acceptAgencyInvite = createServerFn({ method: "POST" })
     return {
       ok: true,
       clientName: client.name as string,
-      agencyName: agencyProfile?.company_name ?? "din byrå",
+      agencyName: agencyCompany.company_name ?? "din byrå",
     };
   });

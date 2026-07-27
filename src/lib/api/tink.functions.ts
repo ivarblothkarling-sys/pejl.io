@@ -32,29 +32,25 @@ async function syncTinkForUser(userId: string) {
     })
     .eq("user_id", userId);
 
-  // Jämför banksaldot mot Fortnox-saldot (profiles.current_balance) — en
-  // stor avvikelse indikerar obetalda fakturor eller transaktioner som
-  // ännu inte bokförts i Fortnox. Egen try/catch så ett fel här inte
-  // förstör den redan lyckade saldo-uppdateringen ovan.
+  // Jämför banksaldot mot Fortnox-saldot (user_companies.current_balance för
+  // användarens primära bolag — Tink-kopplingen är fortfarande en per
+  // användare, inte per bolag) — en stor avvikelse indikerar obetalda
+  // fakturor eller transaktioner som ännu inte bokförts i Fortnox. Egen
+  // try/catch så ett fel här inte förstör den redan lyckade saldo-
+  // uppdateringen ovan.
   try {
-    const { data: profile, error: profileErr } = await supabaseAdmin
-      .from("profiles")
-      .select("current_balance")
-      .eq("id", userId)
-      .maybeSingle();
-    if (profileErr) throw new Error(profileErr.message);
-    if (profile) {
-      const fortnoxBalance = Number(profile.current_balance) || 0;
-      const diff = balance - fortnoxBalance;
-      if (Math.abs(diff) > BANK_DISCREPANCY_THRESHOLD) {
-        const { createNotification } = await import("@/lib/api/notifications.functions");
-        await createNotification({
-          userId,
-          type: "bank_discrepancy",
-          title: "Avvikelse mellan bank och Fortnox",
-          body: `Banksaldo ${formatSEK(balance)} skiljer sig från Fortnox-saldo ${formatSEK(fortnoxBalance)} med ${formatSEK(Math.abs(diff))} — troligen obetalda fakturor eller ej bokförda transaktioner.`,
-        });
-      }
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const company = await resolveCompany(supabaseAdmin, userId, null);
+    const fortnoxBalance = Number(company.current_balance) || 0;
+    const diff = balance - fortnoxBalance;
+    if (Math.abs(diff) > BANK_DISCREPANCY_THRESHOLD) {
+      const { createNotification } = await import("@/lib/api/notifications.functions");
+      await createNotification({
+        userId,
+        type: "bank_discrepancy",
+        title: "Avvikelse mellan bank och Fortnox",
+        body: `Banksaldo ${formatSEK(balance)} skiljer sig från Fortnox-saldo ${formatSEK(fortnoxBalance)} med ${formatSEK(Math.abs(diff))} — troligen obetalda fakturor eller ej bokförda transaktioner.`,
+      });
     }
   } catch (err) {
     console.error("[Tink] Kunde inte kontrollera saldoavvikelse mot Fortnox:", err);
@@ -120,7 +116,9 @@ export const getTinkAuthUrl = createServerFn({ method: "POST" })
     const clientId = process.env.TINK_CLIENT_ID;
     const clientSecret = process.env.TINK_CLIENT_SECRET;
     if (!clientId || !clientSecret)
-      throw new Error("Tink är inte konfigurerad — kontrollera TINK_CLIENT_ID och TINK_CLIENT_SECRET.");
+      throw new Error(
+        "Tink är inte konfigurerad — kontrollera TINK_CLIENT_ID och TINK_CLIENT_SECRET.",
+      );
 
     const { createTinkState } = await import("@/lib/tinkState.server");
     const state = createTinkState(context.userId, clientSecret);
@@ -175,12 +173,7 @@ export const exchangeTinkCode = createServerFn({ method: "POST" })
     const statePayload = verifyTinkState(data.state, clientSecret);
 
     const { exchangeTinkAuthCode } = await import("@/lib/tinkApi.server");
-    const tokens = await exchangeTinkAuthCode(
-      data.code,
-      clientId,
-      clientSecret,
-      TINK_REDIRECT_URI,
-    );
+    const tokens = await exchangeTinkAuthCode(data.code, clientId, clientSecret, TINK_REDIRECT_URI);
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("tink_connections").upsert(

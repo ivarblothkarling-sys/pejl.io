@@ -13,41 +13,32 @@ import { computeTaxEvents } from "@/lib/tax";
 
 export const getDashboardData = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: { companyId?: string } | undefined) => input ?? {})
+  .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { ensureUserBootstrap } = await import("@/lib/userBootstrap.server");
-    await ensureUserBootstrap({ supabase, userId, claims: context.claims });
+    const { primaryCompanyId } = await ensureUserBootstrap({
+      supabase,
+      userId,
+      claims: context.claims,
+    });
 
-    const [profileRes, txRes] = await Promise.all([
-      supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
-      supabase
-        .from("transactions")
-        .select("*")
-        .eq("user_id", userId)
-        .order("due_date", { ascending: true }),
-    ]);
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const profile = await resolveCompany(supabase, userId, data.companyId ?? primaryCompanyId);
 
-    if (profileRes.error) throw new Error(profileRes.error.message);
-    if (txRes.error) throw new Error(txRes.error.message);
+    const { data: txData, error: txError } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("company_id", profile.id)
+      .order("due_date", { ascending: true });
+    if (txError) throw new Error(txError.message);
 
-    const profile = profileRes.data ?? {
-      current_balance: 0,
-      threshold: 0,
-      company_name: "Mitt företag",
-      country: "SE",
-      vat_period: "monthly",
-      currency: "SEK",
-      language: "sv",
-      accounting_provider: "fortnox",
-      onboarding_completed: false,
-      include_pending_in_forecast: false,
-    };
     const country = (profile as { country?: string }).country ?? "SE";
     const vatPeriod = (profile as { vat_period?: string }).vat_period ?? "monthly";
     const includePending = Boolean(
       (profile as { include_pending_in_forecast?: boolean }).include_pending_in_forecast,
     );
-    const rawTxs = (txRes.data ?? []) as Tx[];
+    const rawTxs = (txData ?? []) as Tx[];
 
     // Summera obetalda leverantörsfakturor per attest-status (SEK).
     const approvedPendingSum = rawTxs
@@ -122,12 +113,12 @@ export const getDashboardData = createServerFn({ method: "GET" })
             });
             if (result.ok) {
               await supabase
-                .from("profiles")
+                .from("user_companies")
                 .update({
                   last_low_balance_alert_at: new Date().toISOString(),
                   last_low_balance_alert_key: alertKey,
                 })
-                .eq("id", userId);
+                .eq("id", profile.id);
             }
           } catch (err) {
             console.error("[finance] email alert failed", err);
@@ -144,31 +135,156 @@ export const getDashboardData = createServerFn({ method: "GET" })
       approvedPendingSum,
       awaitingApprovalSum,
       includePendingInForecast: includePending,
+      companyId: profile.id,
+    };
+  });
+
+/**
+ * Konsoliderad vy — summerar kassaflödesprognosen för ANVÄNDARENS alla aktiva
+ * bolag. Kör en fristående computeForecast per bolag (varje bolag har egen
+ * valuta/land/momsperiod/saldo) och summerar sedan dagsbalanserna. Returnerar
+ * en enklare punktform (date/balance) än ForecastPoint eftersom "vilka
+ * händelser låg bakom dagens summa" inte är meningsfullt över flera bolag —
+ * per-bolagsnedbrytningen (perCompany) täcker det behovet istället.
+ */
+export const getConsolidatedDashboardData = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { ensureUserBootstrap } = await import("@/lib/userBootstrap.server");
+    await ensureUserBootstrap({ supabase, userId, claims: context.claims });
+
+    const { data: companiesData, error: companiesErr } = await supabase
+      .from("user_companies")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("is_active", true)
+      .order("is_primary", { ascending: false });
+    if (companiesErr) throw new Error(companiesErr.message);
+    const companies = companiesData ?? [];
+    if (companies.length === 0) {
+      return {
+        perCompany: [],
+        points: [],
+        totalStartBalance: 0,
+        totalThreshold: 0,
+        totalMinBalance: 0,
+        totalMinDate: null,
+        totalBreachDate: null,
+      };
+    }
+
+    const companyIds = companies.map((c) => c.id);
+    const { data: txData, error: txErr } = await supabase
+      .from("transactions")
+      .select("*")
+      .in("company_id", companyIds);
+    if (txErr) throw new Error(txErr.message);
+    const txsByCompany = new Map<string, Tx[]>();
+    for (const t of (txData ?? []) as (Tx & { company_id: string | null })[]) {
+      if (!t.company_id) continue;
+      const list = txsByCompany.get(t.company_id);
+      if (list) list.push(t);
+      else txsByCompany.set(t.company_id, [t]);
+    }
+
+    const perCompanyForecasts = companies.map((company) => {
+      const rawTxs = txsByCompany.get(company.id) ?? [];
+      const includePending = Boolean(company.include_pending_in_forecast);
+      const forecastInput = includePending
+        ? rawTxs
+        : rawTxs.filter((t) => (t.approval_status ?? "approved") !== "pending_approval");
+      const country = (company.country ?? "SE") as "SE" | "NO" | "GB" | "US";
+      const vatPeriod = (company.vat_period ?? "monthly") as "monthly" | "quarterly" | "yearly";
+      const transactions = [
+        ...forecastInput,
+        ...computeTaxEvents(country, new Date(), 30, vatPeriod),
+      ].sort((a, b) => a.due_date.localeCompare(b.due_date));
+      const forecast = computeForecast(
+        Number(company.current_balance) || 0,
+        Number(company.threshold) || 0,
+        transactions,
+        30,
+        new Date(),
+        country,
+        vatPeriod,
+      );
+      return { company, forecast };
+    });
+
+    const pointCount = perCompanyForecasts[0].forecast.points.length;
+    const points = Array.from({ length: pointCount }, (_, i) => {
+      const date = perCompanyForecasts[0].forecast.points[i].date;
+      const balance = perCompanyForecasts.reduce(
+        (sum, { forecast }) => sum + (forecast.points[i]?.balance ?? 0),
+        0,
+      );
+      return { date, balance: Math.round(balance * 100) / 100 };
+    });
+
+    const totalStartBalance = perCompanyForecasts.reduce(
+      (s, { forecast }) => s + forecast.startBalance,
+      0,
+    );
+    const totalThreshold = perCompanyForecasts.reduce(
+      (s, { forecast }) => s + forecast.threshold,
+      0,
+    );
+    let totalMinBalance = points[0]?.balance ?? 0;
+    let totalMinDate = points[0]?.date ?? null;
+    for (const p of points) {
+      if (p.balance < totalMinBalance) {
+        totalMinBalance = p.balance;
+        totalMinDate = p.date;
+      }
+    }
+    const breach = points.find((p) => p.balance < totalThreshold) ?? null;
+
+    return {
+      perCompany: perCompanyForecasts.map(({ company, forecast }) => ({
+        companyId: company.id,
+        companyName: company.company_name,
+        currency: company.currency,
+        currentBalance: forecast.startBalance,
+        minBalance: forecast.minBalance,
+        minDate: forecast.minDate,
+        breachDate: forecast.breachDate,
+      })),
+      points,
+      totalStartBalance: Math.round(totalStartBalance * 100) / 100,
+      totalThreshold: Math.round(totalThreshold * 100) / 100,
+      totalMinBalance: Math.round(totalMinBalance * 100) / 100,
+      totalMinDate,
+      totalBreachDate: breach?.date ?? null,
     };
   });
 
 export const updatePendingApprovalPreference = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(z.object({ include: z.boolean() }))
+  .inputValidator(z.object({ include: z.boolean(), companyId: z.string().uuid().optional() }))
   .handler(async ({ data, context }) => {
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const company = await resolveCompany(context.supabase, context.userId, data.companyId);
     const { error } = await context.supabase
-      .from("profiles")
+      .from("user_companies")
       .update({ include_pending_in_forecast: data.include, updated_at: new Date().toISOString() })
-      .eq("id", context.userId);
+      .eq("id", company.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
 export const updateThreshold = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(z.object({ threshold: z.number().min(0) }))
+  .inputValidator(
+    z.object({ threshold: z.number().min(0), companyId: z.string().uuid().optional() }),
+  )
   .handler(async ({ data, context }) => {
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const company = await resolveCompany(context.supabase, context.userId, data.companyId);
     const { error } = await context.supabase
-      .from("profiles")
-      .upsert(
-        { id: context.userId, threshold: data.threshold, updated_at: new Date().toISOString() },
-        { onConflict: "id" },
-      );
+      .from("user_companies")
+      .update({ threshold: data.threshold, updated_at: new Date().toISOString() })
+      .eq("id", company.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -176,16 +292,16 @@ export const updateThreshold = createServerFn({ method: "POST" })
 /** target: null nollställer målet (döljer progress-baren i dashboarden). */
 export const updateMonthlyRevenueTarget = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(z.object({ target: z.number().min(0).nullable() }))
+  .inputValidator(
+    z.object({ target: z.number().min(0).nullable(), companyId: z.string().uuid().optional() }),
+  )
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase.from("profiles").upsert(
-      {
-        id: context.userId,
-        monthly_revenue_target: data.target,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "id" },
-    );
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const company = await resolveCompany(context.supabase, context.userId, data.companyId);
+    const { error } = await context.supabase
+      .from("user_companies")
+      .update({ monthly_revenue_target: data.target, updated_at: new Date().toISOString() })
+      .eq("id", company.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -269,23 +385,19 @@ ${txs
 
 export const generateWeeklySummary = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: { companyId?: string } | undefined) => input ?? {})
+  .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const [profileRes, txRes] = await Promise.all([
-      supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
-      supabase.from("transactions").select("*").eq("user_id", userId),
-    ]);
-    if (profileRes.error) throw new Error(profileRes.error.message);
-    if (txRes.error) throw new Error(txRes.error.message);
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const profile = await resolveCompany(supabase, userId, data.companyId);
 
-    const profile = profileRes.data ?? {
-      current_balance: 0,
-      threshold: 0,
-      company_name: "ditt företag",
-      country: "SE",
-      vat_period: "monthly",
-    };
-    return buildWeeklySummary(profile, (txRes.data ?? []) as Tx[]);
+    const { data: txData, error: txError } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("company_id", profile.id);
+    if (txError) throw new Error(txError.message);
+
+    return buildWeeklySummary(profile, (txData ?? []) as Tx[]);
   });
 
 // ---------------------------------------------------------------------------
@@ -474,12 +586,16 @@ export function computeCustomerRisk(
 
 export const getCustomerRisk = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: { companyId?: string } | undefined) => input ?? {})
+  .handler(async ({ data: input, context }) => {
     const { supabase, userId } = context;
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const company = await resolveCompany(supabase, userId, input.companyId);
+
     const { data, error } = await supabase
       .from("transactions")
       .select("description, due_date, paid_at")
-      .eq("user_id", userId)
+      .eq("company_id", company.id)
       .eq("kind", "income")
       .not("paid_at", "is", null);
     if (error) throw new Error(error.message);
@@ -496,34 +612,27 @@ export const simulateScenario = createServerFn({ method: "POST" })
       action: z.enum(["hire", "new_client", "delay_payment", "early_invoice"]),
       amount: z.number().min(0),
       date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      companyId: z.string().uuid().optional(),
     }),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const [profileRes, txRes] = await Promise.all([
-      supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
-      supabase
-        .from("transactions")
-        .select("*")
-        .eq("user_id", userId)
-        .order("due_date", { ascending: true }),
-    ]);
-    if (profileRes.error) throw new Error(profileRes.error.message);
-    if (txRes.error) throw new Error(txRes.error.message);
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const profile = await resolveCompany(supabase, userId, data.companyId);
 
-    const profile = profileRes.data ?? {
-      current_balance: 0,
-      threshold: 0,
-      country: "SE",
-      vat_period: "monthly",
-      include_pending_in_forecast: false,
-    };
+    const { data: txData, error: txError } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("company_id", profile.id)
+      .order("due_date", { ascending: true });
+    if (txError) throw new Error(txError.message);
+
     const country = (profile as { country?: string }).country ?? "SE";
     const vatPeriod = (profile as { vat_period?: string }).vat_period ?? "monthly";
     const includePending = Boolean(
       (profile as { include_pending_in_forecast?: boolean }).include_pending_in_forecast,
     );
-    const rawTxs = (txRes.data ?? []) as Tx[];
+    const rawTxs = (txData ?? []) as Tx[];
 
     // Samma uppbyggnad av transaktionslistan som getDashboardData (skatter +
     // attest-filter) — annars matchar inte original_forecast den prognos som
@@ -602,24 +711,20 @@ export const simulateScenario = createServerFn({ method: "POST" })
  */
 export const getMonthlyReportPdf = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: { companyId?: string } | undefined) => input ?? {})
+  .handler(async ({ data: input, context }) => {
     const { supabase, userId } = context;
-    const [profileRes, txRes] = await Promise.all([
-      supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
-      supabase.from("transactions").select("*").eq("user_id", userId),
-    ]);
-    if (profileRes.error) throw new Error(profileRes.error.message);
-    if (txRes.error) throw new Error(txRes.error.message);
+    const { resolveCompany } = await import("@/lib/api/companies.functions");
+    const profile = await resolveCompany(supabase, userId, input.companyId);
 
-    const profile = profileRes.data ?? {
-      company_name: "Mitt företag",
-      current_balance: 0,
-      threshold: 0,
-      country: "SE",
-      vat_period: "monthly",
-    };
+    const { data: txData, error: txError } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("company_id", profile.id);
+    if (txError) throw new Error(txError.message);
+
     const { buildMonthlyReportData, renderMonthlyReportPdf } = await import("@/lib/report.server");
-    const reportData = buildMonthlyReportData(profile, (txRes.data ?? []) as Tx[]);
+    const reportData = buildMonthlyReportData(profile, (txData ?? []) as Tx[]);
     const pdfBytes = await renderMonthlyReportPdf(reportData);
 
     return {
@@ -661,15 +766,21 @@ export const sendPaymentReminder = createServerFn({ method: "POST" })
         "Kan bara skicka påminnelser för kundfakturor synkade från Fortnox — den här saknar en Fortnox-koppling.",
       );
     }
+    if (!tx.company_id) throw new Error("Fakturan är inte kopplad till något bolag.");
     const documentNumber = tx.external_id.slice("inv-".length);
 
-    const { data: conn, error: connErr } = await supabase
-      .from("fortnox_connections")
-      .select("access_token, refresh_token, expires_at, scope")
-      .eq("user_id", userId)
-      .maybeSingle();
+    const [{ data: conn, error: connErr }, { data: profile, error: profileErr }] =
+      await Promise.all([
+        supabase
+          .from("fortnox_connections")
+          .select("access_token, refresh_token, expires_at, scope")
+          .eq("company_id", tx.company_id)
+          .maybeSingle(),
+        supabase.from("user_companies").select("*").eq("id", tx.company_id).maybeSingle(),
+      ]);
     if (connErr) throw new Error(connErr.message);
     if (!conn) throw new Error("Ingen aktiv Fortnox-koppling hittades.");
+    if (profileErr) throw new Error(profileErr.message);
 
     const { ensureFreshFortnoxToken, fetchFortnoxCustomerEmailForInvoice } =
       await import("@/lib/fortnoxApi.server");
@@ -684,10 +795,7 @@ export const sendPaymentReminder = createServerFn({ method: "POST" })
       );
     }
 
-    const [{ data: profile }, { data: userRes }] = await Promise.all([
-      supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
-      supabase.auth.getUser(),
-    ]);
+    const { data: userRes } = await supabase.auth.getUser();
     const companyName = profile?.company_name ?? "Ditt företag";
 
     const { sendInvoiceReminderEmail } = await import("@/lib/emailAlert.server");
@@ -729,7 +837,7 @@ export const sendPaymentReminder = createServerFn({ method: "POST" })
     const { data: allTxRows, error: allTxErr } = await supabase
       .from("transactions")
       .select("*")
-      .eq("user_id", userId);
+      .eq("company_id", tx.company_id);
     if (allTxErr) throw new Error(allTxErr.message);
     const allTxs = (allTxRows ?? []) as Tx[];
     const includePending = Boolean(

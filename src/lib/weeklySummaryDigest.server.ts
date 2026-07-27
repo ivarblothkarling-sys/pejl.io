@@ -1,5 +1,5 @@
-// Server-only: skickar veckobrevet till alla användare med en giltig
-// (icke utgången) Fortnox-koppling. Anropas från Cloudflare Workers
+// Server-only: skickar veckobrevet för alla BOLAG (user_companies) med en
+// giltig (icke utgången) Fortnox-koppling. Anropas från Cloudflare Workers
 // scheduled-hanteraren i plugins/cloudflare-scheduled.ts — se wrangler.toml
 // för cron-schemat (måndagar).
 import type { Tx } from "@/lib/forecast";
@@ -11,7 +11,7 @@ export async function runWeeklySummaryDigest() {
 
   const { data: connections, error } = await supabaseAdmin
     .from("fortnox_connections")
-    .select("user_id")
+    .select("user_id, company_id")
     .gt("expires_at", new Date().toISOString());
   if (error) {
     console.error("[weeklySummaryDigest] Kunde inte hämta fortnox_connections:", error.message);
@@ -22,17 +22,20 @@ export async function runWeeklySummaryDigest() {
   let failed = 0;
 
   for (const conn of connections ?? []) {
+    const companyId = conn.company_id;
+    if (!companyId) continue;
+
     try {
       const [
         { data: userRes },
-        { data: profile, error: profileErr },
+        { data: company, error: companyErr },
         { data: txRows, error: txErr },
       ] = await Promise.all([
         supabaseAdmin.auth.admin.getUserById(conn.user_id),
-        supabaseAdmin.from("profiles").select("*").eq("id", conn.user_id).maybeSingle(),
-        supabaseAdmin.from("transactions").select("*").eq("user_id", conn.user_id),
+        supabaseAdmin.from("user_companies").select("*").eq("id", companyId).maybeSingle(),
+        supabaseAdmin.from("transactions").select("*").eq("company_id", companyId),
       ]);
-      if (profileErr) throw new Error(profileErr.message);
+      if (companyErr) throw new Error(companyErr.message);
       if (txErr) throw new Error(txErr.message);
 
       const email = userRes.user?.email;
@@ -44,7 +47,7 @@ export async function runWeeklySummaryDigest() {
       }
 
       const { summary, forecast } = await buildWeeklySummary(
-        profile ?? {
+        company ?? {
           current_balance: 0,
           threshold: 0,
           company_name: "ditt företag",
@@ -55,7 +58,7 @@ export async function runWeeklySummaryDigest() {
 
       const result = await sendWeeklySummaryEmail({
         to: email,
-        companyName: profile?.company_name ?? "ditt företag",
+        companyName: company?.company_name ?? "ditt företag",
         summary,
         forecast,
       });
@@ -63,9 +66,9 @@ export async function runWeeklySummaryDigest() {
 
       sent += 1;
       await supabaseAdmin
-        .from("profiles")
+        .from("user_companies")
         .update({ last_weekly_summary_sent_at: new Date().toISOString() })
-        .eq("id", conn.user_id);
+        .eq("id", companyId);
 
       try {
         const { createNotification } = await import("@/lib/api/notifications.functions");
@@ -77,13 +80,13 @@ export async function runWeeklySummaryDigest() {
         });
       } catch (notifErr) {
         console.error(
-          `[weeklySummaryDigest] Kunde inte skapa notis för ${conn.user_id}:`,
+          `[weeklySummaryDigest] Kunde inte skapa notis för bolag ${companyId}:`,
           notifErr,
         );
       }
     } catch (err) {
       failed += 1;
-      console.error(`[weeklySummaryDigest] Misslyckades för ${conn.user_id}:`, err);
+      console.error(`[weeklySummaryDigest] Misslyckades för bolag ${companyId}:`, err);
     }
   }
 
