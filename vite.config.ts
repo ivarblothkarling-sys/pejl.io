@@ -4,6 +4,7 @@
 //     componentTagger (dev-only), VITE_* env injection, @ path alias, React/TanStack dedupe,
 //     error logger plugins, and sandbox detection (port/host/strictPort).
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
@@ -29,6 +30,18 @@ export default defineConfig({
     server: {
       port: 8080,
       strictPort: true,
+    },
+    resolve: {
+      // pdf-lib depends on tslib. Nitro's Cloudflare-preset bundler resolves
+      // tslib's "node" export condition (a CJS-flavored .js file) and its
+      // CJS→ESM interop breaks at runtime in workerd ("Cannot destructure
+      // property '__extends' of ... undefined") — verified by actually
+      // running the built Worker in `wrangler dev` (real workerd, not just
+      // Node), not just a clean build. Forcing resolution to tslib's real
+      // ESM build sidesteps the interop entirely.
+      alias: {
+        tslib: fileURLToPath(new URL("./node_modules/tslib/tslib.es6.mjs", import.meta.url)),
+      },
     },
   },
 });

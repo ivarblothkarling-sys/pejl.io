@@ -9,7 +9,8 @@ export type NotificationType =
   | "weekly_summary"
   | "bank_discrepancy"
   | "payment_overdue"
-  | "tax_reminder";
+  | "tax_reminder"
+  | "monthly_report";
 
 /**
  * Skapar en in-app-notis via service-role. Anropas från serverkod som redan

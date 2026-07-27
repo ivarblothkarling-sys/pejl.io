@@ -7,6 +7,7 @@ import { definePlugin } from "nitro";
 
 const DAILY_FORTNOX_SYNC_CRON = "0 5 * * *";
 const WEEKLY_SUMMARY_CRON = "0 6 * * 1";
+const MONTHLY_REPORT_CRON = "0 6 1 * *";
 
 export default definePlugin((nitroApp) => {
   nitroApp.hooks.hook("cloudflare:scheduled", ({ controller, context }) => {
@@ -37,6 +38,20 @@ export default definePlugin((nitroApp) => {
       return;
     }
 
-    console.warn(`[scheduled] Okänd cron-trigger (${cron ?? "saknas"}) — ingen hanterare matchade.`);
+    if (cron === MONTHLY_REPORT_CRON) {
+      console.log(`[scheduled] Cron-trigger (${cron}) — skickar månadsrapport.`);
+      ctx.waitUntil(
+        import("@/lib/monthlyReportDigest.server")
+          .then((m) => m.runMonthlyReportDigest())
+          .catch((error) => {
+            console.error("[scheduled] Månadsrapport misslyckades:", error);
+          }),
+      );
+      return;
+    }
+
+    console.warn(
+      `[scheduled] Okänd cron-trigger (${cron ?? "saknas"}) — ingen hanterare matchade.`,
+    );
   });
 });

@@ -594,3 +594,38 @@ export const simulateScenario = createServerFn({ method: "POST" })
       summary,
     };
   });
+
+/**
+ * Genererar den månatliga PDF-rapporten för INLOGGAD användares senast
+ * avslutade kalendermånad. Base64:as i svaret — server functions serialiseras
+ * via TanStack Starts egna RPC-protokoll (seroval), inte som en rå binär
+ * HTTP-respons, så det är samma mönster som exportTransactionsCsv redan
+ * använder för CSV-nedladdning, bara med binärdata istället för text.
+ */
+export const getMonthlyReportPdf = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const [profileRes, txRes] = await Promise.all([
+      supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
+      supabase.from("transactions").select("*").eq("user_id", userId),
+    ]);
+    if (profileRes.error) throw new Error(profileRes.error.message);
+    if (txRes.error) throw new Error(txRes.error.message);
+
+    const profile = profileRes.data ?? {
+      company_name: "Mitt företag",
+      current_balance: 0,
+      threshold: 0,
+      country: "SE",
+      vat_period: "monthly",
+    };
+    const { buildMonthlyReportData, renderMonthlyReportPdf } = await import("@/lib/report.server");
+    const reportData = buildMonthlyReportData(profile, (txRes.data ?? []) as Tx[]);
+    const pdfBytes = await renderMonthlyReportPdf(reportData);
+
+    return {
+      pdfBase64: Buffer.from(pdfBytes).toString("base64"),
+      filename: `pejl-manadsrapport-${reportData.periodStart.slice(0, 7)}.pdf`,
+    };
+  });

@@ -29,7 +29,7 @@ import {
   exportTransactionsCsv,
   deleteUserAccount,
 } from "@/lib/api/settings.functions";
-import { updatePendingApprovalPreference } from "@/lib/api/finance.functions";
+import { getMonthlyReportPdf, updatePendingApprovalPreference } from "@/lib/api/finance.functions";
 import { createCheckoutSession } from "@/lib/api/billing.functions";
 import { getActiveShareLinks, revokeShareLink } from "@/lib/api/share.functions";
 import { disconnectTink, getTinkAuthUrl, getTinkStatus, syncTink } from "@/lib/api/tink.functions";
@@ -83,6 +83,7 @@ function SettingsPage() {
   const [revokingToken, setRevokingToken] = useState<string | null>(null);
   const [pendingApprovalSaving, setPendingApprovalSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [downloadingReport, setDownloadingReport] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -302,6 +303,30 @@ function SettingsPage() {
       toast.error(e instanceof Error ? e.message : "Kunde inte exportera data");
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    setDownloadingReport(true);
+    try {
+      const { pdfBase64, filename } = await getMonthlyReportPdf();
+      const binary = atob(pdfBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Månadsrapport nedladdad");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Kunde inte generera rapporten");
+    } finally {
+      setDownloadingReport(false);
     }
   };
 
@@ -671,6 +696,25 @@ function SettingsPage() {
               </button>
             ))}
           </div>
+        </section>
+
+        {/* Månadsrapport */}
+        <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+          <h2 className="text-base font-semibold">Månadsrapport</h2>
+          <p className="text-xs text-muted-foreground mt-0.5 mb-4">
+            En PDF med sammanfattning, faktiska vs prognosticerade kassaflöden, försenade kunder,
+            nästa månads prognos och kommande skatter för den senast avslutade kalendermånaden.
+            Skickas också automatiskt via e-post den 1:a varje månad.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadReport}
+            disabled={downloadingReport}
+          >
+            <Download className="size-4" />
+            {downloadingReport ? "Genererar…" : "Ladda ner månadsrapport"}
+          </Button>
         </section>
 
         {/* Ditt konto */}

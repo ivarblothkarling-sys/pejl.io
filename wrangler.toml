@@ -15,4 +15,5 @@
 crons = [
   "0 5 * * *", # 05:00 UTC = 06:00 CET (vintertid) — daglig Fortnox-synk, varje dag.
   "0 6 * * 1", # 06:00 UTC = 07:00 CET (vintertid) — veckobrev, måndagar.
+  "0 6 1 * *", # 06:00 UTC = 07:00 CET (vintertid) — månadsrapport (PDF), den 1:a i varje månad.
 ]

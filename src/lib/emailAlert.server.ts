@@ -376,3 +376,78 @@ export async function sendWeeklySummaryEmail({
     return { ok: false as const, error: "fetch_failed" };
   }
 }
+
+export type MonthlyReportEmailInput = {
+  to: string[];
+  companyName: string;
+  periodLabel: string;
+  pdfBase64: string;
+  filename: string;
+};
+
+/**
+ * Skickar den månatliga PDF-rapporten (se lib/report.server.ts) — till
+ * användaren själv, och till den kopplade redovisningsbyrån också om en
+ * sådan finns (`to` kan alltså innehålla fler än en adress). Resends
+ * `attachments`-fält tar base64-innehåll direkt, ingen egen fil-hosting
+ * behövs.
+ */
+export async function sendMonthlyReportEmail({
+  to,
+  companyName,
+  periodLabel,
+  pdfBase64,
+  filename,
+}: MonthlyReportEmailInput) {
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) {
+    console.error("[emailAlert] Missing RESEND_API_KEY");
+    return { ok: false as const, error: "missing_keys" };
+  }
+
+  const subject = `Månadsrapport ${periodLabel} — ${companyName}`;
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a">
+      <h1 style="font-size:20px;margin:0 0 16px">📄 Månadsrapport — ${periodLabel}</h1>
+      <p style="font-size:15px;line-height:1.5;margin:0 0 16px">
+        Hej! Månadsrapporten för <strong>${companyName}</strong> är klar — se den bifogade PDF:en
+        för sammanfattning, faktiska vs prognosticerade kassaflöden, försenade kunder, nästa
+        månads prognos och kommande skatter.
+      </p>
+      <a href="https://pejl.io/dashboard"
+         style="display:inline-block;background:#0f172a;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">
+        Öppna Pejl →
+      </a>
+      <p style="font-size:12px;color:#94a3b8;margin-top:32px">
+        Du får detta mejl den 1:a varje månad eftersom du har en aktiv Fortnox-koppling i Pejl
+        (eller är kopplad som redovisningskonsult till ett företag som har det).
+      </p>
+    </div>
+  `;
+
+  try {
+    const res = await fetch(RESEND_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${resendKey}`,
+      },
+      body: JSON.stringify({
+        from: FROM,
+        to,
+        subject,
+        html,
+        attachments: [{ filename, content: pdfBase64 }],
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[emailAlert] Resend ${res.status}: ${body}`);
+      return { ok: false as const, error: `resend_${res.status}` };
+    }
+    return { ok: true as const };
+  } catch (err) {
+    console.error("[emailAlert] fetch failed", err);
+    return { ok: false as const, error: "fetch_failed" };
+  }
+}
