@@ -178,16 +178,14 @@ export const updateMonthlyRevenueTarget = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ target: z.number().min(0).nullable() }))
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase
-      .from("profiles")
-      .upsert(
-        {
-          id: context.userId,
-          monthly_revenue_target: data.target,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "id" },
-      );
+    const { error } = await context.supabase.from("profiles").upsert(
+      {
+        id: context.userId,
+        monthly_revenue_target: data.target,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" },
+    );
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -627,5 +625,172 @@ export const getMonthlyReportPdf = createServerFn({ method: "GET" })
     return {
       pdfBase64: Buffer.from(pdfBytes).toString("base64"),
       filename: `pejl-manadsrapport-${reportData.periodStart.slice(0, 7)}.pdf`,
+    };
+  });
+
+/**
+ * Skickar en betalningspåminnelse till en SLUTKUND för en specifik försenad
+ * kundfaktura. Kräver att fakturan kommer från Fortnox (external_id =
+ * "inv-<DocumentNumber>") — mock-/SIE-data har ingen riktig kund att slå
+ * upp e-post för, och det är bättre att ge ett tydligt fel än att låtsas
+ * att det fungerar.
+ *
+ * Returnerar samma form som simulateScenario (original_forecast/
+ * simulated_forecast/difference/summary) — inte bara "updated_forecast" —
+ * så dashboarden kan återanvända sin befintliga simuleringsgraf rakt av
+ * istället för att bygga en ny overlay bara för det här flödet.
+ */
+export const sendPaymentReminder = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ transactionId: z.string().uuid() }))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+
+    const { data: tx, error: txErr } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("id", data.transactionId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (txErr) throw new Error(txErr.message);
+    if (!tx) throw new Error("Fakturan hittades inte.");
+    if (tx.kind !== "income") throw new Error("Bara kundfakturor kan få en betalningspåminnelse.");
+    if (tx.paid) throw new Error("Fakturan är redan markerad som betald.");
+    if (tx.source !== "fortnox" || !tx.external_id || !tx.external_id.startsWith("inv-")) {
+      throw new Error(
+        "Kan bara skicka påminnelser för kundfakturor synkade från Fortnox — den här saknar en Fortnox-koppling.",
+      );
+    }
+    const documentNumber = tx.external_id.slice("inv-".length);
+
+    const { data: conn, error: connErr } = await supabase
+      .from("fortnox_connections")
+      .select("access_token, refresh_token, expires_at, scope")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (connErr) throw new Error(connErr.message);
+    if (!conn) throw new Error("Ingen aktiv Fortnox-koppling hittades.");
+
+    const { ensureFreshFortnoxToken, fetchFortnoxCustomerEmailForInvoice } =
+      await import("@/lib/fortnoxApi.server");
+    const accessToken = await ensureFreshFortnoxToken({ ...conn, user_id: userId });
+    const { email, customerName } = await fetchFortnoxCustomerEmailForInvoice(
+      accessToken,
+      documentNumber,
+    );
+    if (!email) {
+      throw new Error(
+        `Kunde inte hitta en e-postadress för kunden på faktura ${documentNumber} i Fortnox.`,
+      );
+    }
+
+    const [{ data: profile }, { data: userRes }] = await Promise.all([
+      supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
+      supabase.auth.getUser(),
+    ]);
+    const companyName = profile?.company_name ?? "Ditt företag";
+
+    const { sendInvoiceReminderEmail } = await import("@/lib/emailAlert.server");
+    const emailResult = await sendInvoiceReminderEmail({
+      to: email,
+      customerName: customerName ?? "kund",
+      companyName,
+      invoiceNumber: documentNumber,
+      amount: Number(tx.amount),
+      dueDate: tx.due_date,
+      replyTo: userRes.user?.email ?? null,
+    });
+    if (!emailResult.ok) {
+      throw new Error(`Kunde inte skicka mejlet (${emailResult.error}).`);
+    }
+
+    const sentAt = new Date().toISOString();
+    const { error: updateErr } = await supabase
+      .from("transactions")
+      .update({ reminder_sent_at: sentAt })
+      .eq("id", tx.id);
+    if (updateErr) throw new Error(updateErr.message);
+
+    try {
+      const { createNotification } = await import("@/lib/api/notifications.functions");
+      await createNotification({
+        userId,
+        type: "payment_reminder_sent",
+        title: `Påminnelse skickad — faktura ${documentNumber}`,
+        body: `${formatSEK(Number(tx.amount))} till ${customerName ?? "kund"} (${email}), ursprungligt förfallodatum ${tx.due_date}.`,
+        relatedId: tx.id,
+      });
+    } catch (notifErr) {
+      console.error("[finance] Kunde inte skapa notis för skickad påminnelse:", notifErr);
+    }
+
+    // Uppdaterad prognos: hur mycket bättre lägsta saldot blir OM kunden
+    // betalar inom 7 dagar.
+    const { data: allTxRows, error: allTxErr } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("user_id", userId);
+    if (allTxErr) throw new Error(allTxErr.message);
+    const allTxs = (allTxRows ?? []) as Tx[];
+    const includePending = Boolean(
+      (profile as { include_pending_in_forecast?: boolean } | null)?.include_pending_in_forecast,
+    );
+    const forecastInput = includePending
+      ? allTxs
+      : allTxs.filter((t) => (t.approval_status ?? "approved") !== "pending_approval");
+    const country = ((profile as { country?: string } | null)?.country ?? "SE") as
+      "SE" | "NO" | "GB" | "US";
+    const vatPeriod = ((profile as { vat_period?: string } | null)?.vat_period ?? "monthly") as
+      "monthly" | "quarterly" | "yearly";
+    const startBalance = Number(profile?.current_balance) || 0;
+    const threshold = Number(profile?.threshold) || 0;
+    const fromDate = new Date();
+
+    const originalForecast = computeForecast(
+      startBalance,
+      threshold,
+      forecastInput,
+      30,
+      fromDate,
+      country,
+      vatPeriod,
+    );
+
+    const paysWithin7Days = new Date(fromDate);
+    paysWithin7Days.setUTCDate(paysWithin7Days.getUTCDate() + 7);
+    const paysWithin7DaysIso = paysWithin7Days.toISOString().slice(0, 10);
+    const simulatedTxs = forecastInput.map((t) =>
+      t.id === tx.id ? { ...t, due_date: paysWithin7DaysIso } : t,
+    );
+    const simulatedForecast = computeForecast(
+      startBalance,
+      threshold,
+      simulatedTxs,
+      30,
+      fromDate,
+      country,
+      vatPeriod,
+    );
+
+    const difference = originalForecast.points.map((p, i) => ({
+      date: p.date,
+      diff:
+        Math.round(((simulatedForecast.points[i]?.balance ?? p.balance) - p.balance) * 100) / 100,
+    }));
+    const minDiff =
+      Math.round((simulatedForecast.minBalance - originalForecast.minBalance) * 100) / 100;
+    const summary =
+      minDiff <= 0
+        ? `Påminnelse skickad till ${customerName ?? "kunden"}. Den här fakturan påverkar inte lägsta saldot i prognosen, så en betalning inom 7 dagar förändrar det inte ytterligare.`
+        : `Påminnelse skickad till ${customerName ?? "kunden"}. Om fakturan betalas inom 7 dagar förbättras lägsta saldot med ${formatSEK(minDiff)} den ${simulatedForecast.minDate}.`;
+
+    return {
+      ok: true as const,
+      sentTo: email,
+      reminderSentAt: sentAt,
+      original_forecast: originalForecast.points,
+      simulated_forecast: simulatedForecast.points,
+      difference,
+      summary,
     };
   });

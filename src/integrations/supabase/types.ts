@@ -356,6 +356,7 @@ export type Database = {
           kind: string
           paid: boolean
           paid_at: string | null
+          reminder_sent_at: string | null
           source: string
           user_id: string
         }
@@ -370,6 +371,7 @@ export type Database = {
           kind: string
           paid?: boolean
           paid_at?: string | null
+          reminder_sent_at?: string | null
           source?: string
           user_id: string
         }
@@ -384,6 +386,7 @@ export type Database = {
           kind?: string
           paid?: boolean
           paid_at?: string | null
+          reminder_sent_at?: string | null
           source?: string
           user_id?: string
         }

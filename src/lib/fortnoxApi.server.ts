@@ -263,3 +263,47 @@ export async function fetchFortnoxFullyPaidInvoices(
   }
   return paid;
 }
+
+export interface FortnoxCustomerContact {
+  email: string | null;
+  customerName: string | null;
+}
+
+interface FortnoxInvoiceDetailResponse {
+  Invoice?: { CustomerNumber?: string; CustomerName?: string };
+}
+interface FortnoxCustomerDetailResponse {
+  Customer?: { Email?: string; Name?: string };
+}
+
+/**
+ * Slår upp kundens e-post för en specifik faktura: GET /invoices/{DocumentNumber}
+ * för CustomerNumber, sedan GET /customers/{CustomerNumber} för Email — samma
+ * tvåstegskedja som Fortnox egna dokumentation beskriver, verifierad mot
+ * Fortnox egna auto-genererade API-typer (samma källa som användes för att
+ * bekräfta att companyinformation INTE exponerar momsperiod tidigare i det
+ * här projektet). Kastar aldrig — degraderar till { email: null } om något
+ * steg saknar data, så anroparen kan ge ett tydligt felmeddelande istället
+ * för en trasig stack trace.
+ */
+export async function fetchFortnoxCustomerEmailForInvoice(
+  accessToken: string,
+  documentNumber: string,
+): Promise<FortnoxCustomerContact> {
+  const invRes = await fortnoxGet<FortnoxInvoiceDetailResponse>(
+    `/invoices/${documentNumber}`,
+    accessToken,
+  );
+  const customerNumber = invRes.Invoice?.CustomerNumber;
+  const customerName = invRes.Invoice?.CustomerName ?? null;
+  if (!customerNumber) return { email: null, customerName };
+
+  const custRes = await fortnoxGet<FortnoxCustomerDetailResponse>(
+    `/customers/${customerNumber}`,
+    accessToken,
+  );
+  return {
+    email: custRes.Customer?.Email?.trim() || null,
+    customerName: custRes.Customer?.Name ?? customerName,
+  };
+}

@@ -21,6 +21,8 @@ export type Tx = {
    * att computeForecast behöver ändras.
    */
   paid_at?: string | null;
+  /** Satt av sendPaymentReminder i finance.functions.ts när en betalningspåminnelse skickats till kunden för den här fakturan. */
+  reminder_sent_at?: string | null;
   /** True för transaktioner som INTE är bokförda utan uppskattade av computeForecast (återkommande-detektion). */
   predicted?: boolean;
 };

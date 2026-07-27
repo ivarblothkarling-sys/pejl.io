@@ -48,6 +48,7 @@ import {
 import {
   generateWeeklySummary,
   getDashboardData,
+  sendPaymentReminder,
   simulateScenario,
   updateMonthlyRevenueTarget,
   updatePendingApprovalPreference,
@@ -167,6 +168,7 @@ function DashboardPage() {
   const [simulating, setSimulating] = useState(false);
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
   const simulateScenarioFn = useServerFn(simulateScenario);
+  const [sendingReminderId, setSendingReminderId] = useState<string | null>(null);
 
   const handleSimulate = async () => {
     const option = SIMULATION_OPTIONS.find((o) => o.value === simulateAction)!;
@@ -189,8 +191,19 @@ function DashboardPage() {
     }
   };
 
-
-
+  const handleSendReminder = async (transactionId: string) => {
+    setSendingReminderId(transactionId);
+    try {
+      const result = await sendPaymentReminder({ data: { transactionId } });
+      setSimulationResult(result);
+      toast.success("Påminnelse skickad", { description: result.summary });
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kunde inte skicka påminnelsen");
+    } finally {
+      setSendingReminderId(null);
+    }
+  };
 
 
 
@@ -539,6 +552,20 @@ function DashboardPage() {
   }));
 
   const upcomingUnpaid = transactions.filter((t) => !t.paid).slice(0, 8);
+
+  const overdueTodayForCalc = new Date();
+  overdueTodayForCalc.setHours(0, 0, 0, 0);
+  const overdueInvoices = transactions
+    .filter((t) => !t.paid && t.kind === "income" && t.category !== "tax")
+    .map((t) => ({
+      ...t,
+      daysOverdue: Math.round(
+        (overdueTodayForCalc.getTime() - new Date(t.due_date).getTime()) / 86_400_000,
+      ),
+    }))
+    .filter((t) => t.daysOverdue > 0)
+    .sort((a, b) => b.daysOverdue - a.daysOverdue)
+    .slice(0, 5);
 
   // Proaktiv chatt-hälsning + datadrivna förslag
   const daysUntilBreach = forecast.breachDate
@@ -1013,6 +1040,45 @@ function DashboardPage() {
             )}
 
           </div>
+        )}
+
+        {/* Försenade kundfakturor — bredvid varningsrutan */}
+        {overdueInvoices.length > 0 && (
+          <section className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+            <h3 className="font-semibold mb-3">Försenade kundfakturor</h3>
+            <ul className="space-y-3">
+              {overdueInvoices.map((t) => (
+                <li
+                  key={t.id}
+                  className="flex items-center justify-between gap-3 text-sm flex-wrap"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-foreground">{t.description}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatSEK(Number(t.amount))} · {t.daysOverdue} dagar försenad
+                    </div>
+                  </div>
+                  {t.reminder_sent_at ? (
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      Påminnelse skickad {formatDateSv(t.reminder_sent_at.slice(0, 10))} — inväntar
+                      svar
+                    </span>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={sendingReminderId === t.id}
+                      onClick={() => handleSendReminder(t.id)}
+                      className="shrink-0"
+                    >
+                      <BellRing className="size-3.5" />
+                      {sendingReminderId === t.id ? "Skickar…" : "Skicka påminnelse"}
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
 
         {/* Forecast chart */}

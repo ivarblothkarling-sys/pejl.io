@@ -451,3 +451,99 @@ export async function sendMonthlyReportEmail({
     return { ok: false as const, error: "fetch_failed" };
   }
 }
+
+export type InvoiceReminderEmailInput = {
+  to: string;
+  customerName: string;
+  companyName: string;
+  invoiceNumber: string;
+  amount: number;
+  dueDate: string;
+  /** Pejl-användarens egen e-post — svar från kunden ska gå dit, inte till Pejls alerts-inkorg. */
+  replyTo?: string | null;
+};
+
+/**
+ * Betalningspåminnelse till en SLUTKUND (inte Pejl-användaren) för en
+ * specifik försenad kundfaktura — se sendPaymentReminder i finance.
+ * functions.ts. Innehåller medvetet INGA specifika betalningsuppgifter
+ * (bankgiro/plusgiro/IBAN) — Pejl varken lagrar eller känner till
+ * användarens faktiska betalningsuppgifter, och att hitta på sådana i ett
+ * mejl till en verklig kund vore direkt skadligt. Hänvisar istället till
+ * den ursprungliga fakturan, med fakturanumret som referens.
+ */
+export async function sendInvoiceReminderEmail({
+  to,
+  customerName,
+  companyName,
+  invoiceNumber,
+  amount,
+  dueDate,
+  replyTo,
+}: InvoiceReminderEmailInput) {
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) {
+    console.error("[emailAlert] Missing RESEND_API_KEY");
+    return { ok: false as const, error: "missing_keys" };
+  }
+
+  const dateSv = new Date(dueDate).toLocaleDateString("sv-SE", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const belopp = formatSEK(amount);
+
+  const subject = `Påminnelse: Faktura ${invoiceNumber} förfaller ${dateSv}`;
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a">
+      <p style="font-size:15px;line-height:1.6;margin:0 0 16px">Hej ${customerName},</p>
+      <p style="font-size:15px;line-height:1.6;margin:0 0 16px">
+        Det här är en vänlig påminnelse om att faktura <strong>${invoiceNumber}</strong> från
+        <strong>${companyName}</strong> ännu inte har registrerats som betald.
+      </p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
+        <tr><td style="padding:8px 0;color:#64748b">Fakturanummer</td><td style="padding:8px 0;text-align:right"><strong>${invoiceNumber}</strong></td></tr>
+        <tr><td style="padding:8px 0;color:#64748b">Belopp</td><td style="padding:8px 0;text-align:right"><strong>${belopp}</strong></td></tr>
+        <tr><td style="padding:8px 0;color:#64748b">Ursprungligt förfallodatum</td><td style="padding:8px 0;text-align:right"><strong>${dateSv}</strong></td></tr>
+      </table>
+      <p style="font-size:14px;line-height:1.6;color:#475569;margin:16px 0">
+        Vänligen betala enligt betalningsuppgifterna på den ursprungliga fakturan, med
+        fakturanumret ${invoiceNumber} som referens. Har fakturan redan betalats, eller har du
+        frågor om den — hör gärna av dig till ${companyName} direkt.
+      </p>
+      <p style="font-size:14px;line-height:1.6;color:#475569;margin:16px 0">
+        Med vänliga hälsningar,<br/>${companyName}
+      </p>
+      <p style="font-size:11px;color:#94a3b8;margin-top:32px">
+        Det här mejlet skickades via Pejl på uppdrag av ${companyName}.
+      </p>
+    </div>
+  `;
+
+  try {
+    const res = await fetch(RESEND_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${resendKey}`,
+      },
+      body: JSON.stringify({
+        from: FROM,
+        to: [to],
+        subject,
+        html,
+        ...(replyTo ? { reply_to: [replyTo] } : {}),
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[emailAlert] Resend ${res.status}: ${body}`);
+      return { ok: false as const, error: `resend_${res.status}` };
+    }
+    return { ok: true as const };
+  } catch (err) {
+    console.error("[emailAlert] fetch failed", err);
+    return { ok: false as const, error: "fetch_failed" };
+  }
+}
