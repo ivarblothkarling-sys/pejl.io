@@ -63,13 +63,21 @@ function OnboardingPage() {
         if (s.threshold > 0) setThreshold(String(s.threshold));
         if (s.companyName) setCompanyName(s.companyName);
       })
-      .catch(() => {});
+      .catch((err) => {
+        toast.error(err instanceof Error ? err.message : "Kunde inte hämta onboarding-status.");
+      });
     getFortnoxStatus()
       .then((s) => setFortnoxConnected(s.connected))
-      .catch(() => {});
+      .catch((err) => {
+        toast.error(err instanceof Error ? err.message : "Kunde inte hämta Fortnox-status.");
+      });
     getFortnoxAuthUrl({ data: { redirectUri: getFortnoxRedirectUri() } })
       .then(({ url }) => setFortnoxAuthUrl(url))
-      .catch(() => {});
+      .catch((err) => {
+        toast.error(
+          err instanceof Error ? err.message : "Kunde inte förbereda Fortnox-kopplingen.",
+        );
+      });
     try {
       const params = new URLSearchParams(window.location.search);
       if (params.get("fortnox") === "connected") {
